@@ -151,6 +151,7 @@ MarkdownDemo
 - email:will.miao@edonsoft.com
 - 公众号：Access开发
 - B站：[@Access开发易登软件](https://space.bilibili.com/10580232?spm_id_from=333.1007.0.0)
+- 公司网站：[www.edonsoft.com](http://www.edonsoft.com)
 
 ## 🙏 致谢
 
@@ -310,6 +311,7 @@ Specializes in enterprise digital solutions, having independently architected or
 - Email: will.miao@edonsoft.com
 - WeChat Official Account: Access开发
 - Bilibili: [@Access开发易登软件](https://space.bilibili.com/10580232?spm_id_from=333.1007.0.0)
+- Website: [www.edonsoft.com](http://www.edonsoft.com)
 
 ## 🙏 Acknowledgments
 
