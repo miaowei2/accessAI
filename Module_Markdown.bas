@@ -1,20 +1,19 @@
-Attribute VB_Name = "Module_Markdown"
 Option Compare Database
 Option Explicit
  
 '
-' ǰ������:
-'   1. ���� JsonConverter ģ�� (VBA-JSON by Tim Hall)
-'   2. ���� -> ���� -> ��ѡ "Microsoft Scripting Runtime"
-'   3. �޸� API_KEY Ϊ��� DeepSeek Key
+' 前置条件:
+'   1. 导入 JsonConverter 模块 (VBA-JSON by Tim Hall)
+'   2. 工具 -> 引用 -> 勾选 "Microsoft Scripting Runtime"
+'   3. 修改 API_KEY 为你的 DeepSeek Key
 '
-' ���ٿ�ʼ:
-'   �� VBA ��������ִ��:
-'       CreateAIForm          ' �Զ����� AI �ʴ���
-'   Ȼ���� Access �д򿪴��� frmAI, ��������, ��� [����]
+' 快速开始:
+'   在 VBA 立即窗口执行:
+'       CreateAIForm          ' 自动创建 AI 问答窗体
+'   然后在 Access 中打开窗体 frmAI, 输入问题, 点击 [提问]
 '
-'   ��������:
-'       ShowMarkdown "# ����" & vbCrLf & "**����**"
+'   其他可用:
+'       ShowMarkdown "# 标题" & vbCrLf & "**粗体**"
 '       MarkdownDemo
 '====================================================
 
@@ -25,7 +24,7 @@ Option Explicit
     Private Declare Sub Sleep Lib "kernel32" (ByVal dwMilliseconds As Long)
 #End If
 
-' ---------- ���� ----------
+' ---------- 常量 ----------
 Private Const API_KEY   As String = "sk-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
 Private Const API_URL   As String = "https://api.deepseek.com/chat/completions"
 Private Const API_MODEL As String = "deepseek-chat"
@@ -37,13 +36,13 @@ Private Const TXT_MD    As String = "txtMarkdown"
 
 '############################################################
 '#                                                          #
-'#   ��һ����: Markdown -> ���ı� HTML                       #
+'#   第一部分: Markdown -> 富文本 HTML                       #
 '#                                                          #
 '############################################################
 
 '====================================================
-' ����: Markdown -> Access ���ı� HTML
-' Access ֧��: <b> <i> <u> <p> <br> <font> <ul> <ol> <li>
+' 核心: Markdown -> Access 富文本 HTML
+' Access 支持: <b> <i> <u> <p> <br> <font> <ul> <ol> <li>
 '====================================================
 Public Function MarkdownToRichText(ByVal sMd As String) As String
     Dim vLines As Variant
@@ -63,7 +62,7 @@ Public Function MarkdownToRichText(ByVal sMd As String) As String
     For i = 0 To UBound(vLines)
         ln = CStr(vLines(i))
 
-        ' ---- ����� ``` ----
+        ' ---- 代码块 ``` ----
         If Left$(Trim$(ln), 3) = "```" Then
             If Not inCode Then
                 If inUL Then: out = out & "</ul>": inUL = False
@@ -79,14 +78,14 @@ Public Function MarkdownToRichText(ByVal sMd As String) As String
             GoTo NxtLine
         End If
 
-        ' ---- ���� ----
+        ' ---- 空行 ----
         If Len(Trim$(ln)) = 0 Then
             If inUL Then: out = out & "</ul>": inUL = False
             If inOL Then: out = out & "</ol>": inOL = False
             GoTo NxtLine
         End If
 
-        ' ---- ˮƽ�� ----
+        ' ---- 水平线 ----
         If IsHRule(ln) Then
             If inUL Then: out = out & "</ul>": inUL = False
             If inOL Then: out = out & "</ol>": inOL = False
@@ -94,7 +93,7 @@ Public Function MarkdownToRichText(ByVal sMd As String) As String
             GoTo NxtLine
         End If
 
-        ' ---- ���� # ~ ###### ----
+        ' ---- 标题 # ~ ###### ----
         Dim hLv As Long
         hLv = HeadingLevel(ln)
         If hLv > 0 Then
@@ -117,7 +116,7 @@ Public Function MarkdownToRichText(ByVal sMd As String) As String
             GoTo NxtLine
         End If
 
-        ' ---- ���� > ----
+        ' ---- 引用 > ----
         If Left$(LTrim$(ln), 1) = ">" Then
             If inUL Then: out = out & "</ul>": inUL = False
             If inOL Then: out = out & "</ol>": inOL = False
@@ -132,7 +131,7 @@ Public Function MarkdownToRichText(ByVal sMd As String) As String
             GoTo NxtLine
         End If
 
-        ' ---- �����б� ----
+        ' ---- 无序列表 ----
         If IsULItem(ln) Then
             If inOL Then: out = out & "</ol>": inOL = False
             If Not inUL Then: out = out & "<ul>": inUL = True
@@ -142,7 +141,7 @@ Public Function MarkdownToRichText(ByVal sMd As String) As String
             If inUL Then: out = out & "</ul>": inUL = False
         End If
 
-        ' ---- �����б� ----
+        ' ---- 有序列表 ----
         If IsOLItem(ln) Then
             If inUL Then: out = out & "</ul>": inUL = False
             If Not inOL Then: out = out & "<ol>": inOL = True
@@ -152,7 +151,7 @@ Public Function MarkdownToRichText(ByVal sMd As String) As String
             If inOL Then: out = out & "</ol>": inOL = False
         End If
 
-        ' ---- ���� ----
+        ' ---- 表格 ----
         If IsTblRow(ln) Then
             If Not IsTblSep(ln) Then
                 out = out & "<p><font face=""Consolas"" size=""2"">" & EscHtml(ln) & "</font></p>"
@@ -160,7 +159,7 @@ Public Function MarkdownToRichText(ByVal sMd As String) As String
             GoTo NxtLine
         End If
 
-        ' ---- ��ͨ���� ----
+        ' ---- 普通段落 ----
         out = out & "<p>" & FmtInline(ln) & "</p>"
 
 NxtLine:
@@ -173,7 +172,7 @@ NxtLine:
 End Function
 
 '====================================================
-' ���ڸ�ʽ (����/б��/����/����/ͼƬ/ɾ����)
+' 行内格式 (粗体/斜体/代码/链接/图片/删除线)
 '====================================================
 Private Function FmtInline(ByVal s As String) As String
     Dim re As Object
@@ -184,11 +183,11 @@ Private Function FmtInline(ByVal s As String) As String
     Set re = MakeRE("`([^`]+)`")
     s = re.Replace(s, "<font face=""Consolas"" color=""#c7254e"">$1</font>")
 
-    ' ![alt](url) - ͼƬ (����������֮ǰ)
+    ' ![alt](url) - 图片 (必须在链接之前)
     Set re = MakeRE("!\[([^\]]*)\]\(([^)]+)\)")
     s = re.Replace(s, "<font color=""#999999"">[img: $1]</font>")
 
-    ' [text](url) - ����
+    ' [text](url) - 链接
     Set re = MakeRE("\[([^\]]+)\]\(([^)]+)\)")
     s = re.Replace(s, "<font color=""#0366d6""><u>$1</u></font>")
 
@@ -220,28 +219,28 @@ End Function
 
 '############################################################
 '#                                                          #
-'#   �ڶ�����: DeepSeek API ����                             #
-'#   ����A: curl �ӽ�������ʽ (Windows 10 1803+)            #
-'#   ����B: ͬ������ + ���ֻ�Ч�� (����)                     #
+'#   第二部分: DeepSeek API 调用                             #
+'#   方案A: curl 子进程真流式 (Windows 10 1803+)            #
+'#   方案B: 同步请求 + 打字机效果 (兜底)                     #
 '#                                                          #
 '############################################################
 
 '====================================================
-' ��ť���
+' 按钮入口
 '====================================================
 Public Sub Askai()
     Dim frm As Form
     Set frm = Screen.ActiveForm
 
     If Len(Trim$(Nz(frm!txtQ, ""))) = 0 Then
-        MsgBox "���������⡣", vbInformation
+        MsgBox "请输入问题。", vbInformation
         Exit Sub
     End If
 
     Dim sQuestion As String
     sQuestion = CStr(frm!txtQ)
 
-    ' curl.exe �� Windows 10 1803 ��ʼ����
+    ' curl.exe 从 Windows 10 1803 开始内置
     If Dir(Environ$("SystemRoot") & "\System32\curl.exe") <> "" Then
         StreamWithCurl frm, sQuestion
     Else
@@ -250,20 +249,20 @@ Public Sub Askai()
 End Sub
 
 '====================================================
-' ����A: ����ʽ �� curl �ӽ����� SSE ����
+' 方案A: 真流式 — curl 子进程做 SSE 请求
 '
-' ԭ��:
-'   1. ��������д����ʱ JSON �ļ�
-'   2. �� Shell ���� curl, �� SSE ��ʽ����, �������ʱ�ļ�
-'   3. VBA ÿ 80ms ��ѯ��ʱ�ļ�, ��ȡ��������
-'   4. ���� SSE data ��, ��ȡ delta.content
-'   5. ʵʱ�����ı��� (�����ı߽��ձ���ʾ)
-'   6. �յ� [DONE] ��תΪ Markdown ���ı�
+' 原理:
+'   1. 将请求体写入临时 JSON 文件
+'   2. 用 Shell 启动 curl, 以 SSE 流式接收, 输出到临时文件
+'   3. VBA 每 80ms 轮询临时文件, 读取新增内容
+'   4. 解析 SSE data 行, 提取 delta.content
+'   5. 实时更新文本框 (真正的边接收边显示)
+'   6. 收到 [DONE] 后转为 Markdown 富文本
 '====================================================
 Private Sub StreamWithCurl(frm As Form, ByVal sQuestion As String)
     On Error GoTo ErrHandler
 
-    ' --- ׼����ʱ�ļ� ---
+    ' --- 准备临时文件 ---
     Dim sTS As String
     Randomize
     sTS = Format$(Now, "yyyymmdd_hhnnss") & "_" & CStr(Int(Rnd() * 100000))
@@ -276,14 +275,14 @@ Private Sub StreamWithCurl(frm As Form, ByVal sQuestion As String)
     sTmpErr = Environ$("TEMP") & "\ds_err_" & sTS & ".txt"
     sTmpDone = Environ$("TEMP") & "\ds_done_" & sTS & ".flag"
 
-    ' ���������� (stream=true)
+    ' 构建请求体 (stream=true)
     Dim sBody As String
     sBody = BuildDeepSeekRequestBody(sQuestion, True)
 
-    ' д���������ļ� (UTF-8 �� BOM)
+    ' 写入请求体文件 (UTF-8 无 BOM)
     WriteUTF8NoBom sTmpBody, sBody
 
-    ' ɾ������Ӧ�ļ�
+    ' 删除旧响应文件
     On Error Resume Next
     Kill sTmpResp
         Kill sTmpErr
@@ -291,7 +290,7 @@ Private Sub StreamWithCurl(frm As Form, ByVal sQuestion As String)
     Err.Clear
     On Error GoTo ErrHandler
 
-    ' --- ���� curl ---
+    ' --- 启动 curl ---
     Dim sCurl As String
         sCurl = """" & Environ$("SystemRoot") & "\System32\curl.exe"" " & _
                 "--http1.1 -sS -N --no-buffer " & _
@@ -305,18 +304,18 @@ Private Sub StreamWithCurl(frm As Form, ByVal sQuestion As String)
         sCmd = "cmd /c (" & sCurl & " 1>""" & sTmpResp & """ 2>""" & sTmpErr & """) & echo done>""" & sTmpDone & """"
         Shell sCmd, vbHide
 
-    ' --- UI ��ʼ�� ---
+    ' --- UI 初始化 ---
     DoCmd.Hourglass True
-    frm!lblMsg.Caption = "AI ����˼��..."
+    frm!lblMsg.Caption = "AI 正在思考..."
     frm!txtAnswer.TextFormat = acTextFormatPlain
     frm!txtAnswer.Value = ""
     frm.Repaint
 
-    ' --- ��ѯ��Ӧ�ļ� ---
-    Dim sFullText As String     ' �ۻ��������ش�
-    Dim lLastRawLen As Long     ' �ϴζ�����ԭʼ�ı�����
-    Dim sngStart As Single      ' ��ʼʱ��
-    Dim sngLastUI As Single     ' �ϴ� UI ˢ��ʱ��
+    ' --- 轮询响应文件 ---
+    Dim sFullText As String     ' 累积的完整回答
+    Dim lLastRawLen As Long     ' 上次读到的原始文本长度
+    Dim sngStart As Single      ' 开始时间
+    Dim sngLastUI As Single     ' 上次 UI 刷新时间
     Dim bDone As Boolean
     Dim bFirstToken As Boolean
     Dim bProcDone As Boolean
@@ -331,37 +330,37 @@ Private Sub StreamWithCurl(frm As Form, ByVal sQuestion As String)
     bDone = False
     bFirstToken = False
     bProcDone = False
-    sCursor = ChrW$(&H258C)    ' ��
+    sCursor = ChrW$(&H258C)    ' ▌
 
     Do
         DoEvents
-        Sleep 80                ' 80ms һ��
+        Sleep 80                ' 80ms 一轮
 
-        ' ��ȡ��ʱ�ļ� (UTF-8)
+        ' 读取临时文件 (UTF-8)
         sAll = ReadFileAsUTF8(sTmpResp)
 
-        ' ��������
+        ' 有新内容
         If Len(sAll) > lLastRawLen Then
             lLastRawLen = Len(sAll)
 
-            ' ����Ƿ����
+            ' 检查是否结束
             If InStr(sAll, "[DONE]") > 0 Then bDone = True
 
-            ' ���½���ȫ�� SSE ���� (�򵥿ɿ�, ���½ض�)
+            ' 重新解析全部 SSE 数据 (简单可靠, 不怕截断)
             Dim sNewFull As String
             sNewFull = ParseSSEChunk(sAll)
 
             If Len(sNewFull) > Len(sFullText) Then
                 sFullText = sNewFull
 
-                ' �״��յ�����
+                ' 首次收到内容
                 If Not bFirstToken Then
                     bFirstToken = True
                     DoCmd.Hourglass False
-                    frm!lblMsg.Caption = "�������..."
+                    frm!lblMsg.Caption = "正在输出..."
                 End If
 
-                ' ������ʾ
+                ' 更新显示
                 frm!txtAnswer.Value = sFullText & sCursor
                 frm.Repaint
                 sngLastUI = Timer
@@ -372,46 +371,46 @@ Private Sub StreamWithCurl(frm As Form, ByVal sQuestion As String)
         If bDone Then Exit Do
         If bProcDone Then Exit Do
 
-        ' ��ʱ 180 ��
+        ' 超时 180 秒
         Dim sngElapsed As Single
         sngElapsed = Timer - sngStart
-        If sngElapsed < 0 Then sngElapsed = sngElapsed + 86400  ' ����ҹ
+        If sngElapsed < 0 Then sngElapsed = sngElapsed + 86400  ' 跨午夜
         If sngElapsed > 180 Then
-            frm!lblMsg.Caption = "����ʱ��"
+            frm!lblMsg.Caption = "请求超时。"
             sErr = ReadFileAsUTF8(sTmpErr)
             If Len(sErr) > 0 Then
-                MsgBox "����ʱ��curl ���:" & vbCrLf & Left$(sErr, 1000), vbExclamation
+                MsgBox "请求超时。curl 输出:" & vbCrLf & Left$(sErr, 1000), vbExclamation
             Else
-                MsgBox "����ʱ (180��)��", vbExclamation
+                MsgBox "请求超时 (180秒)。", vbExclamation
             End If
             Exit Do
         End If
     Loop
 
-    ' --- ������ʾ: Markdown ���ı� ---
+    ' --- 最终显示: Markdown 富文本 ---
     DoCmd.Hourglass False
     If Len(sFullText) > 0 Then
         frm!txtAnswer.TextFormat = acTextFormatHTMLRichText
         frm!txtAnswer.Value = MarkdownToRichText(sFullText)
-        frm!lblMsg.Caption = "�ش���ɡ� (�� " & Len(sFullText) & " �ַ�)"
+        frm!lblMsg.Caption = "回答完成。 (共 " & Len(sFullText) & " 字符)"
     Else
-        ' �����Ǵ�����Ӧ
+        ' 可能是错误响应
         sAll = ReadFileAsUTF8(sTmpResp)
         sErr = ReadFileAsUTF8(sTmpErr)
         If Len(sErr) > 0 Then
-            frm!txtAnswer.Value = "curl ����:" & vbCrLf & Left$(sErr, 1500)
-            frm!lblMsg.Caption = "curl ִ��ʧ�ܡ�"
+            frm!txtAnswer.Value = "curl 错误:" & vbCrLf & Left$(sErr, 1500)
+            frm!lblMsg.Caption = "curl 执行失败。"
         ElseIf Len(sAll) > 0 Then
-            frm!txtAnswer.Value = "����ʧ��:" & vbCrLf & Left$(sAll, 1000)
-            frm!lblMsg.Caption = "��ɣ����������ݲ�����Ч SSE��"
+            frm!txtAnswer.Value = "请求失败:" & vbCrLf & Left$(sAll, 1000)
+            frm!lblMsg.Caption = "完成，但返回内容不是有效 SSE。"
         Else
-            frm!txtAnswer.Value = "(δ�յ��ش�)"
-            frm!lblMsg.Caption = "curl �ѽ�������δ�յ����ݡ�"
+            frm!txtAnswer.Value = "(未收到回答)"
+            frm!lblMsg.Caption = "curl 已结束，但未收到内容。"
         End If
     End If
     frm.Repaint
 
-    ' ������ʱ�ļ�
+    ' 清理临时文件
     On Error Resume Next
     Kill sTmpBody
     Kill sTmpResp
@@ -433,8 +432,8 @@ ErrHandler:
 End Sub
 
 '====================================================
-' ����B ����: ͬ������ + ���ֻ�Ч��
-' (curl ������ʱ�Զ�ʹ��)
+' 方案B 兜底: 同步请求 + 打字机效果
+' (curl 不可用时自动使用)
 '====================================================
 Private Sub SyncWithTypewriter(frm As Form, ByVal sQuestion As String)
     On Error GoTo ErrHandler
@@ -443,7 +442,7 @@ Private Sub SyncWithTypewriter(frm As Form, ByVal sQuestion As String)
     sBody = BuildDeepSeekRequestBody(sQuestion, False)
 
     DoCmd.Hourglass True
-    frm!lblMsg.Caption = "AI ����˼��..."
+    frm!lblMsg.Caption = "AI 正在思考..."
     frm!txtAnswer.TextFormat = acTextFormatPlain
     frm!txtAnswer.Value = ""
     frm.Repaint
@@ -457,7 +456,7 @@ Private Sub SyncWithTypewriter(frm As Form, ByVal sQuestion As String)
     xmlHttp.send sBody
 
     If xmlHttp.Status <> 200 Then
-        frm!lblMsg.Caption = "����ʧ��: HTTP " & xmlHttp.Status
+        frm!lblMsg.Caption = "请求失败: HTTP " & xmlHttp.Status
         MsgBox "HTTP " & xmlHttp.Status & vbCrLf & _
                Left$(xmlHttp.responseText, 500), vbExclamation
         GoTo ExitHere
@@ -471,16 +470,16 @@ Private Sub SyncWithTypewriter(frm As Form, ByVal sQuestion As String)
     DoCmd.Hourglass False
 
     If Len(sAnswer) = 0 Then
-        MsgBox "API ��������Ϊ�ա�", vbExclamation
+        MsgBox "API 返回内容为空。", vbExclamation
         GoTo ExitHere
     End If
 
-    frm!lblMsg.Caption = "�������..."
+    frm!lblMsg.Caption = "正在输出..."
     TypewriterShow frm, sAnswer
 
     frm!txtAnswer.TextFormat = acTextFormatHTMLRichText
     frm!txtAnswer.Value = MarkdownToRichText(sAnswer)
-    frm!lblMsg.Caption = "�ش���ɡ� (�� " & Len(sAnswer) & " �ַ�)"
+    frm!lblMsg.Caption = "回答完成。 (共 " & Len(sAnswer) & " 字符)"
 
 ExitHere:
     DoCmd.Hourglass False
@@ -497,7 +496,7 @@ ErrHandler:
 End Sub
 
 '====================================================
-' ���ֻ�Ч�� (����B ʹ��, �ٶ�����Ӧ)
+' 打字机效果 (方案B 使用, 速度自适应)
 '====================================================
 Private Sub TypewriterShow(frm As Form, ByVal sText As String)
     Dim lTotal As Long
@@ -534,7 +533,7 @@ Private Sub TypewriterShow(frm As Form, ByVal sText As String)
 End Sub
 
 '====================================================
-' SSE ����: ��ȡ���� data �е� delta.content
+' SSE 解析: 提取所有 data 行的 delta.content
 '====================================================
 Private Function ParseSSEChunk(ByVal sChunk As String) As String
     Dim vLines As Variant
@@ -562,7 +561,7 @@ Private Function ParseSSEChunk(ByVal sChunk As String) As String
 End Function
 
 '====================================================
-' �� JsonConverter �������� SSE JSON
+' 用 JsonConverter 解析单条 SSE JSON
 '====================================================
 Private Function ExtractDelta(ByVal sJson As String) As String
     On Error Resume Next
@@ -587,8 +586,8 @@ Private Function ExtractDelta(ByVal sJson As String) As String
 End Function
 
 '====================================================
-' ͳһ���� DeepSeek ������
-' ʹ�� JsonConverter ���л�, �����ֹ�ƴ JSON ����
+' 统一构建 DeepSeek 请求体
+' 使用 JsonConverter 序列化, 避免手工拼 JSON 出错
 '====================================================
 Private Function BuildDeepSeekRequestBody(ByVal sQuestion As String, _
                                           Optional ByVal bStream As Boolean = False) As String
@@ -614,10 +613,10 @@ Private Function BuildDeepSeekRequestBody(ByVal sQuestion As String, _
 End Function
 
 '====================================================
-' UTF-8 �ļ�д�� (�� BOM, curl ��Ҫ)
+' UTF-8 文件写入 (无 BOM, curl 需要)
 '====================================================
 Private Sub WriteUTF8NoBom(ByVal sPath As String, ByVal sText As String)
-    ' ���� ADODB.Stream д UTF-8 (��� BOM)
+    ' 先用 ADODB.Stream 写 UTF-8 (会带 BOM)
     Dim stm As Object
     Set stm = CreateObject("ADODB.Stream")
     stm.Type = 2
@@ -628,7 +627,7 @@ Private Sub WriteUTF8NoBom(ByVal sPath As String, ByVal sText As String)
     stm.Close
     Set stm = Nothing
 
-    ' ���¶�ȡ������, ȥ�� 3 �ֽ� BOM (EF BB BF)
+    ' 重新读取二进制, 去掉 3 字节 BOM (EF BB BF)
     Dim f As Integer
     Dim bAll() As Byte
     Dim lLen As Long
@@ -644,16 +643,16 @@ Private Sub WriteUTF8NoBom(ByVal sPath As String, ByVal sText As String)
     Get #f, 1, bAll
     Close #f
 
-    ' ��� BOM
+    ' 检查 BOM
     If bAll(0) = &HEF And bAll(1) = &HBB And bAll(2) = &HBF Then
-        ' ȥ��ǰ 3 �ֽ���д
+        ' 去掉前 3 字节重写
         Dim bNoBom() As Byte
         ReDim bNoBom(lLen - 4)
         Dim j As Long
         For j = 0 To lLen - 4
             bNoBom(j) = bAll(j + 3)
         Next j
-        ' ������ɾ�����ļ�, ���� Open For Binary ���ض�, �����β���ֽ�
+        ' 必须先删除旧文件, 否则 Open For Binary 不截断, 会残留尾部字节
         Kill sPath
         f = FreeFile
         Open sPath For Binary Access Write As #f
@@ -663,19 +662,19 @@ Private Sub WriteUTF8NoBom(ByVal sPath As String, ByVal sText As String)
 End Sub
 
 '====================================================
-' ��ȡ��ʱ�ļ� (UTF-8 -> VBA �ַ���)
-' �ļ��������� curl д��, ʧ��ʱ���ؿմ�
+' 读取临时文件 (UTF-8 -> VBA 字符串)
+' 文件可能正被 curl 写入, 失败时返回空串
 '====================================================
 Private Function ReadFileAsUTF8(ByVal sPath As String) As String
     On Error Resume Next
 
-    ' ����ļ��Ƿ����
+    ' 检查文件是否存在
     If Dir(sPath) = "" Then
         ReadFileAsUTF8 = ""
         Exit Function
     End If
 
-    ' ��ȡԭʼ�ֽ�
+    ' 读取原始字节
     Dim f As Integer
     Dim lLen As Long
     Dim bArr() As Byte
@@ -699,7 +698,7 @@ Private Function ReadFileAsUTF8(ByVal sPath As String) As String
     Get #f, 1, bArr
     Close #f
 
-    ' �� ADODB.Stream �� UTF-8 �ֽ�תΪ VBA �ַ���
+    ' 用 ADODB.Stream 将 UTF-8 字节转为 VBA 字符串
     Dim stm As Object
     Set stm = CreateObject("ADODB.Stream")
     stm.Type = 1    ' adTypeBinary
@@ -721,13 +720,13 @@ End Function
 
 '############################################################
 '#                                                          #
-'#   ��������: �����Զ�����                                  #
+'#   第三部分: 窗体自动创建                                  #
 '#                                                          #
 '############################################################
 
 '====================================================
-' ���� AI �ʴ��� frmAI
-' ����: txtQ, txtAnswer(���ı�), lblMsg, btnAsk
+' 创建 AI 问答窗体 frmAI
+' 包含: txtQ, txtAnswer(富文本), lblMsg, btnAsk
 '====================================================
 Public Sub CreateAIForm()
     On Error GoTo Err_Create
@@ -743,7 +742,7 @@ Public Sub CreateAIForm()
 
     Set frm = CreateForm
     With frm
-        .Caption = "AI �ʴ� (DeepSeek)"
+        .Caption = "AI 问答 (DeepSeek)"
         .DefaultView = 0
         .ScrollBars = 0
         .RecordSelectors = False
@@ -755,14 +754,14 @@ Public Sub CreateAIForm()
         .Section(acDetail).BackColor = RGB(248, 249, 250)
     End With
 
-    ' --- ��ǩ: ���� ---
+    ' --- 标签: 问题 ---
     Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 200, 150, 1200, 350)
-    ctl.Caption = "����:"
+    ctl.Caption = "问题:"
     ctl.FontName = "Microsoft YaHei"
     ctl.FontSize = 10
     ctl.FontBold = True
 
-    ' --- txtQ: ��������� ---
+    ' --- txtQ: 问题输入框 ---
     Set ctl = CreateControl(frm.Name, acTextBox, acDetail, , , 200, 520, 9200, 600)
     ctl.Name = "txtQ"
     ctl.FontName = "Microsoft YaHei"
@@ -770,24 +769,24 @@ Public Sub CreateAIForm()
     ctl.ScrollBars = 2
     ctl.EnterKeyBehavior = True
 
-    ' --- btnAsk: ���ʰ�ť ---
+    ' --- btnAsk: 提问按钮 ---
     Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 9600, 520, 2000, 600)
     ctl.Name = "btnAsk"
-    ctl.Caption = "��  ��"
+    ctl.Caption = "提  问"
     ctl.FontName = "Microsoft YaHei"
     ctl.FontSize = 10
     ctl.FontBold = True
     ctl.OnClick = "=btnAsk_Click()"
 
-    ' --- lblMsg: ״̬��ǩ ---
+    ' --- lblMsg: 状态标签 ---
     Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 200, 1250, 11400, 350)
     ctl.Name = "lblMsg"
-    ctl.Caption = "����������� [����]"
+    ctl.Caption = "输入问题后点击 [提问]"
     ctl.FontName = "Microsoft YaHei"
     ctl.FontSize = 9
     ctl.ForeColor = RGB(108, 117, 125)
 
-    ' --- txtAnswer: �ش���� (���ı�) ---
+    ' --- txtAnswer: 回答输出 (富文本) ---
     Set ctl = CreateControl(frm.Name, acTextBox, acDetail, , , 200, 1700, 11400, 8100)
     ctl.Name = "txtAnswer"
     ctl.FontName = "Microsoft YaHei"
@@ -799,23 +798,23 @@ Public Sub CreateAIForm()
     ctl.TabStop = False
     ctl.EnterKeyBehavior = True
 
-    ' ���洰��
+    ' 保存窗体
     sTmp = frm.Name
     DoCmd.Close acForm, sTmp, acSaveYes
     Set frm = Nothing
 
-    ' ���´������ͼ���� TextFormat (���뱣��������)
+    ' 重新打开设计视图设置 TextFormat (必须保存后才能设)
     DoCmd.OpenForm sTmp, acDesign
     Forms(sTmp).Controls("txtAnswer").TextFormat = acTextFormatHTMLRichText
     DoCmd.Close acForm, sTmp, acSaveYes
 
-    ' ������
+    ' 重命名
     If sTmp <> AI_FORM Then
         DoCmd.Rename AI_FORM, acForm, sTmp
     End If
 
-    MsgBox "���� [" & AI_FORM & "] �����ɹ�!" & vbCrLf & vbCrLf & _
-           "�򿪴��弴��ʹ�� AI �ʴ�", vbInformation
+    MsgBox "窗体 [" & AI_FORM & "] 创建成功!" & vbCrLf & vbCrLf & _
+           "打开窗体即可使用 AI 问答。", vbInformation
     Exit Sub
 
 Err_Create:
@@ -823,7 +822,7 @@ Err_Create:
 End Sub
 
 '====================================================
-' ������ Markdown �鿴���� frmMarkdownViewer
+' 创建纯 Markdown 查看窗体 frmMarkdownViewer
 '====================================================
 Public Sub CreateMarkdownForm()
     On Error GoTo Err_Create
@@ -885,12 +884,12 @@ End Sub
 
 '############################################################
 '#                                                          #
-'#   ���Ĳ���: ��ʾ/���ߺ���                                 #
+'#   第四部分: 显示/工具函数                                 #
 '#                                                          #
 '############################################################
 
 '====================================================
-' ������ʾ Markdown
+' 弹窗显示 Markdown
 '====================================================
 Public Sub ShowMarkdown(ByVal sMd As String, Optional ByVal sTitle As String = "Markdown")
     On Error GoTo Err_Show
@@ -911,7 +910,7 @@ Err_Show:
 End Sub
 
 '====================================================
-' д�����⸻�ı��ı���
+' 写入任意富文本文本框
 '====================================================
 Public Sub SetTextBoxMarkdown(txt As TextBox, ByVal sMd As String)
     txt.TextFormat = acTextFormatHTMLRichText
@@ -919,7 +918,7 @@ Public Sub SetTextBoxMarkdown(txt As TextBox, ByVal sMd As String)
 End Sub
 
 '====================================================
-' HTML ת��
+' HTML 转义
 '====================================================
 Private Function EscHtml(ByVal s As String) As String
     s = Replace(s, "&", "&amp;")
@@ -930,7 +929,7 @@ Private Function EscHtml(ByVal s As String) As String
 End Function
 
 '====================================================
-' JSON �ַ���ת��
+' JSON 字符串转义
 '====================================================
 Private Function EscJsonStr(ByVal s As String) As String
     s = Replace(s, "\", "\\")
@@ -943,7 +942,7 @@ Private Function EscJsonStr(ByVal s As String) As String
 End Function
 
 '====================================================
-' ���򹤳�
+' 正则工厂
 '====================================================
 Private Function MakeRE(ByVal sPat As String, _
                         Optional bGlobal As Boolean = True) As Object
@@ -957,7 +956,7 @@ Private Function MakeRE(ByVal sPat As String, _
 End Function
 
 '====================================================
-' Markdown �����жϺ���
+' Markdown 辅助判断函数
 '====================================================
 Private Function HeadingLevel(ByVal ln As String) As Long
     Dim n As Long
@@ -1029,7 +1028,7 @@ Private Function IsTblSep(ByVal ln As String) As Boolean
 End Function
 
 '====================================================
-' UTF-8 �ļ���ȡ
+' UTF-8 文件读取
 '====================================================
 Public Function ReadTextFile(ByVal sPath As String) As String
     On Error GoTo Err_Read
@@ -1051,7 +1050,7 @@ Err_Read:
 End Function
 
 '====================================================
-' �жϴ����Ƿ����
+' 判断窗体是否存在
 '====================================================
 Private Function FormExists(ByVal sName As String) As Boolean
     Dim obj As AccessObject
@@ -1067,12 +1066,12 @@ End Function
 
 '############################################################
 '#                                                          #
-'#   ���岿��: ��ʾ                                          #
+'#   第五部分: 演示                                          #
 '#                                                          #
 '############################################################
 
 '====================================================
-' Markdown ��ʾ
+' Markdown 演示
 '====================================================
 Public Sub MarkdownDemo()
     Dim s As String
