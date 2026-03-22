@@ -5,6 +5,7 @@ Option Explicit
 ' 前置条件:
 '   1. 导入 JsonConverter 模块 (VBA-JSON by Tim Hall)
 '   2. 工具 -> 引用 -> 勾选 "Microsoft Scripting Runtime"
+<<<<<<< HEAD
 '   3. 修改各 AI 提供商的 API Key
 '
 ' 支持的 AI 模型:
@@ -17,6 +18,18 @@ Option Explicit
 '
 '   其他可用:
 '       ShowMarkdown "# 标题" & vbCrLf & "**粗体**"
+=======
+'   3. 修改 API_KEY 为你的 DeepSeek Key
+'
+' 快速开始:
+'   在 VBA 立即窗口执行:
+'       CreateAIForm          ' 自动创建 AI 问答窗体
+'   然后在 Access 中打开窗体 frmAI, 输入问题, 点击 [提问]
+'
+'   其他可用:
+'       ShowMarkdown "# 标题" & vbCrLf & "**粗体**"
+'       MarkdownDemo
+>>>>>>> 7a8bc922e4c17fd1b3a8e4fc7b138128bf745ccf
 '====================================================
 
 ' ---------- Win32 Sleep ----------
@@ -26,6 +39,7 @@ Option Explicit
     Private Declare Sub Sleep Lib "kernel32" (ByVal dwMilliseconds As Long)
 #End If
 
+<<<<<<< HEAD
 ' ---------- AI 提供商配置 ----------
 ' 请将下方 Key 替换为你自己的 API Key
 
@@ -48,6 +62,12 @@ Private Const WX_MODEL As String = "ernie-4.0-8k"
 Private Const KM_KEY   As String = "sk-XXXXXXXXXXXXXXXXXXXX"
 Private Const KM_URL   As String = "https://api.moonshot.cn/v1/chat/completions"
 Private Const KM_MODEL As String = "moonshot-v1-8k"
+=======
+' ---------- 常量 ----------
+Private Const API_KEY   As String = "sk-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+Private Const API_URL   As String = "https://api.deepseek.com/chat/completions"
+Private Const API_MODEL As String = "deepseek-chat"
+>>>>>>> 7a8bc922e4c17fd1b3a8e4fc7b138128bf745ccf
 
 Private Const AI_FORM   As String = "frmAI"
 Private Const MD_FORM   As String = "frmMarkdownViewer"
@@ -247,14 +267,19 @@ End Function
 
 '############################################################
 '#                                                          #
+<<<<<<< HEAD
 '#   第二部分: AI API 调用 (多模型支持)                      #
 '#   支持: DeepSeek / 通义千问 / 文心一言 / Kimi             #
+=======
+'#   第二部分: DeepSeek API 调用                             #
+>>>>>>> 7a8bc922e4c17fd1b3a8e4fc7b138128bf745ccf
 '#   方案A: curl 子进程真流式 (Windows 10 1803+)            #
 '#   方案B: 同步请求 + 打字机效果 (兜底)                     #
 '#                                                          #
 '############################################################
 
 '====================================================
+<<<<<<< HEAD
 ' 根据提供商名称返回 API 配置
 '====================================================
 Private Sub GetProviderConfig(ByVal sProvider As String, _
@@ -625,6 +650,8 @@ Public Function btnDeleteSession_Click()
 End Function
 
 '====================================================
+=======
+>>>>>>> 7a8bc922e4c17fd1b3a8e4fc7b138128bf745ccf
 ' 按钮入口
 '====================================================
 Public Sub Askai()
@@ -639,6 +666,7 @@ Public Sub Askai()
     Dim sQuestion As String
     sQuestion = CStr(frm!txtQ)
 
+<<<<<<< HEAD
     ' 获取选择的 AI 提供商
     Dim sProvider As String
     On Error Resume Next
@@ -665,6 +693,8 @@ Public Sub Askai()
     m_colHistory.Add oUserMsg
     m_sLastAnswer = ""
 
+=======
+>>>>>>> 7a8bc922e4c17fd1b3a8e4fc7b138128bf745ccf
     ' curl.exe 从 Windows 10 1803 开始内置
     If Dir(Environ$("SystemRoot") & "\System32\curl.exe") <> "" Then
         StreamWithCurl frm, sQuestion, sUrl, sKey, sModel
@@ -1195,8 +1225,12 @@ End Function
 
 '====================================================
 ' 创建 AI 问答窗体 frmAI
+<<<<<<< HEAD
 ' 包含: cboProvider, txtQ, txtAnswer(富文本), lblMsg,
 '       btnAsk, btnNewChat, 自定义端点字段
+=======
+' 包含: txtQ, txtAnswer(富文本), lblMsg, btnAsk
+>>>>>>> 7a8bc922e4c17fd1b3a8e4fc7b138128bf745ccf
 '====================================================
 Public Sub CreateAIForm()
     On Error GoTo Err_Create
@@ -1236,7 +1270,11 @@ Public Sub CreateAIForm()
     ' ========== 窗体主体 ==========
     Set frm = CreateForm
     With frm
+<<<<<<< HEAD
         .Caption = "AccessAI"
+=======
+        .Caption = "AI 问答 (DeepSeek)"
+>>>>>>> 7a8bc922e4c17fd1b3a8e4fc7b138128bf745ccf
         .DefaultView = 0
         .ScrollBars = 0
         .RecordSelectors = False
@@ -1246,6 +1284,7 @@ Public Sub CreateAIForm()
         .Width = 14400
     End With
 
+<<<<<<< HEAD
     frm.Section(acDetail).Height = 11200
     frm.Section(acDetail).BackColor = cBg
 
@@ -1268,15 +1307,26 @@ Public Sub CreateAIForm()
     ' --- 标题: 渐变感图标 + 文字 ---
     Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 340, 130, 2000, 360)
     ctl.Caption = ChrW(&H2726) & " AccessAI"
+=======
+    ' --- 标签: 问题 ---
+    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 200, 150, 1200, 350)
+    ctl.Caption = "问题:"
+>>>>>>> 7a8bc922e4c17fd1b3a8e4fc7b138128bf745ccf
     ctl.FontName = "Microsoft YaHei"
     ctl.FontSize = 13
     ctl.FontBold = True
     ctl.ForeColor = cAccent
     ctl.BackStyle = 0
 
+<<<<<<< HEAD
     ' --- cboProvider: 模型下拉框 (胶囊形) ---
     Set ctl = CreateControl(frm.Name, acComboBox, acDetail, , , 2800, 130, 2800, 360)
     ctl.Name = "cboProvider"
+=======
+    ' --- txtQ: 问题输入框 ---
+    Set ctl = CreateControl(frm.Name, acTextBox, acDetail, , , 200, 520, 9200, 600)
+    ctl.Name = "txtQ"
+>>>>>>> 7a8bc922e4c17fd1b3a8e4fc7b138128bf745ccf
     ctl.FontName = "Microsoft YaHei"
     ctl.FontSize = 10
     ctl.RowSourceType = "Value List"
@@ -1288,16 +1338,33 @@ Public Sub CreateAIForm()
     ctl.BorderColor = cBorder
     ctl.AfterUpdate = "=cboProvider_AfterUpdate()"
 
+<<<<<<< HEAD
     ' --- btnNewChat: 新对话 ---
     Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 6000, 130, 2200, 360)
     ctl.Name = "btnNewChat"
     ctl.Caption = ChrW(&H2795) & " 新对话"
+=======
+    ' --- btnAsk: 提问按钮 ---
+    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 9600, 520, 2000, 600)
+    ctl.Name = "btnAsk"
+    ctl.Caption = "提  问"
+    ctl.FontName = "Microsoft YaHei"
+    ctl.FontSize = 10
+    ctl.FontBold = True
+    ctl.OnClick = "=btnAsk_Click()"
+
+    ' --- lblMsg: 状态标签 ---
+    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 200, 1250, 11400, 350)
+    ctl.Name = "lblMsg"
+    ctl.Caption = "输入问题后点击 [提问]"
+>>>>>>> 7a8bc922e4c17fd1b3a8e4fc7b138128bf745ccf
     ctl.FontName = "Microsoft YaHei"
     ctl.FontSize = 9
     ctl.ForeColor = cText
     ctl.BackColor = cSurface
     ctl.OnClick = "=btnNewChat_Click()"
 
+<<<<<<< HEAD
     ' --- btnHistory: 历史记录 ---
     Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 8400, 130, 2400, 360)
     ctl.Name = "btnHistory"
@@ -1381,6 +1448,10 @@ Public Sub CreateAIForm()
 
     ' --- txtAnswer: 回答区 (大面积白底, 极简边框) ---
     Set ctl = CreateControl(frm.Name, acTextBox, acDetail, , , 500, 1180, 13400, 7600)
+=======
+    ' --- txtAnswer: 回答输出 (富文本) ---
+    Set ctl = CreateControl(frm.Name, acTextBox, acDetail, , , 200, 1700, 11400, 8100)
+>>>>>>> 7a8bc922e4c17fd1b3a8e4fc7b138128bf745ccf
     ctl.Name = "txtAnswer"
     ctl.FontName = "Microsoft YaHei"
     ctl.FontSize = 11
@@ -1393,6 +1464,7 @@ Public Sub CreateAIForm()
     ctl.TabStop = False
     ctl.EnterKeyBehavior = True
 
+<<<<<<< HEAD
     ' --- lblMsg: 状态标签 ---
     Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 500, 8850, 13400, 280)
     ctl.Name = "lblMsg"
@@ -1431,12 +1503,18 @@ Public Sub CreateAIForm()
     ctl.BackColor = cAccent
     ctl.OnClick = "=btnAsk_Click()"
 
+=======
+>>>>>>> 7a8bc922e4c17fd1b3a8e4fc7b138128bf745ccf
     ' 保存窗体
     sTmp = frm.Name
     DoCmd.Close acForm, sTmp, acSaveYes
     Set frm = Nothing
 
+<<<<<<< HEAD
     ' 重新打开设计视图设置 TextFormat
+=======
+    ' 重新打开设计视图设置 TextFormat (必须保存后才能设)
+>>>>>>> 7a8bc922e4c17fd1b3a8e4fc7b138128bf745ccf
     DoCmd.OpenForm sTmp, acDesign
     Forms(sTmp).Controls("txtAnswer").TextFormat = acTextFormatHTMLRichText
     DoCmd.Close acForm, sTmp, acSaveYes
@@ -1446,9 +1524,12 @@ Public Sub CreateAIForm()
         DoCmd.Rename AI_FORM, acForm, sTmp
     End If
 
+<<<<<<< HEAD
     ' 同时创建历史记录表
     EnsureHistoryTable
 
+=======
+>>>>>>> 7a8bc922e4c17fd1b3a8e4fc7b138128bf745ccf
     MsgBox "窗体 [" & AI_FORM & "] 创建成功!" & vbCrLf & vbCrLf & _
            "打开窗体即可使用 AI 问答。", vbInformation
     Exit Sub
@@ -1458,6 +1539,7 @@ Err_Create:
 End Sub
 
 '====================================================
+<<<<<<< HEAD
 ' 创建对话历史记录窗体 frmChatHistory
 '====================================================
 Public Sub CreateHistoryForm()
@@ -1585,6 +1667,8 @@ Err_CreateH:
 End Sub
 
 '====================================================
+=======
+>>>>>>> 7a8bc922e4c17fd1b3a8e4fc7b138128bf745ccf
 ' 创建纯 Markdown 查看窗体 frmMarkdownViewer
 '====================================================
 Public Sub CreateMarkdownForm()
@@ -1824,4 +1908,61 @@ Private Function FormExists(ByVal sName As String) As Boolean
         End If
     Next obj
     FormExists = False
+<<<<<<< HEAD
 End Function
+=======
+End Function
+
+
+'############################################################
+'#                                                          #
+'#   第五部分: 演示                                          #
+'#                                                          #
+'############################################################
+
+'====================================================
+' Markdown 演示
+'====================================================
+Public Sub MarkdownDemo()
+    Dim s As String
+
+    s = "# Markdown Demo" & vbCrLf & vbCrLf
+    s = s & "## Basic Formatting" & vbCrLf & vbCrLf
+    s = s & "Support **bold**, *italic*, ***bold italic***, ~~strikethrough~~ and `inline code`." & vbCrLf & vbCrLf
+
+    s = s & "## Lists" & vbCrLf & vbCrLf
+    s = s & "Unordered:" & vbCrLf
+    s = s & "- Item A" & vbCrLf
+    s = s & "- Item B" & vbCrLf
+    s = s & "- Item C" & vbCrLf & vbCrLf
+    s = s & "Ordered:" & vbCrLf
+    s = s & "1. Step One" & vbCrLf
+    s = s & "2. Step Two" & vbCrLf
+    s = s & "3. Step Three" & vbCrLf & vbCrLf
+
+    s = s & "## Blockquote" & vbCrLf & vbCrLf
+    s = s & "> This is a blockquote." & vbCrLf
+    s = s & "> Multiple lines." & vbCrLf & vbCrLf
+
+    s = s & "## Code" & vbCrLf & vbCrLf
+    s = s & "```vba" & vbCrLf
+    s = s & "Sub Hello()" & vbCrLf
+    s = s & "    MsgBox ""Hello!""" & vbCrLf
+    s = s & "End Sub" & vbCrLf
+    s = s & "```" & vbCrLf & vbCrLf
+
+    s = s & "## Table" & vbCrLf & vbCrLf
+    s = s & "| Name  | Dept   | ID  |" & vbCrLf
+    s = s & "|-------|--------|-----|" & vbCrLf
+    s = s & "| Alice | R&D    | 001 |" & vbCrLf
+    s = s & "| Bob   | Sales  | 002 |" & vbCrLf & vbCrLf
+
+    s = s & "---" & vbCrLf & vbCrLf
+    s = s & "Link: [Microsoft](https://www.microsoft.com)" & vbCrLf & vbCrLf
+    s = s & "*Rendered by Module_AI_Markdown*"
+
+    ShowMarkdown s, "Markdown Demo"
+End Sub
+
+
+>>>>>>> 7a8bc922e4c17fd1b3a8e4fc7b138128bf745ccf
