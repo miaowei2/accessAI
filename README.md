@@ -4,18 +4,31 @@
 
 **让 Microsoft Access 无缝对接 AI 大模型的开源 VBA 工具库**
 
-> 在 Access 中一键调用 DeepSeek 等 AI 大模型，支持流式输出、Markdown 渲染、打字机效果，开箱即用。
+> 在 Access 中一键调用 DeepSeek、通义千问、文心一言、Kimi 等 AI 大模型，支持流式输出、Markdown 渲染、打字机效果，开箱即用。
 
 ![Access](https://img.shields.io/badge/Microsoft%20Access-2010%2B-green)
 ![VBA](https://img.shields.io/badge/VBA-7.x-blue)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
 ![DeepSeek](https://img.shields.io/badge/AI-DeepSeek-purple)
+![Qwen](https://img.shields.io/badge/AI-通义千问-blue)
+![ERNIE](https://img.shields.io/badge/AI-文心一言-red)
+![Kimi](https://img.shields.io/badge/AI-Kimi-orange)
+
+---
+
+![AccessAI 界面截图](1.png)
 
 ---
 
 ## ✨ 功能特性
 
-- **AI 对话问答** — 在 Access 窗体中直接向 DeepSeek 提问，获取智能回答
+- **多模型支持** — 内置 DeepSeek、通义千问、文心一言、Kimi 四大 AI 模型，下拉框一键切换
+- **AI 对话问答** — 在 Access 窗体中直接向 AI 提问，获取智能回答
+- **对话历史记录** — 自动保持对话上下文，AI 能记住之前的对话内容，点击「新对话」重置
+- **历史对话持久化** — 对话记录自动保存至 Access 数据表 `tblChatHistory`，关闭数据库后仍可查阅
+- **历史会话管理** — 通过 `frmChatHistory` 窗体浏览、加载、删除历史会话
+- **自定义 API 端点** — 支持配置任意 OpenAI 兼容 API，模型下拉框选择「自定义」后填写 URL、Key、模型名称
+- **现代化 UI** — 参考 DeepSeek / Gemini 风格设计，白色背景 + 蓝紫色调，简洁美观
 - **流式输出 (SSE)** — 基于 curl 的流式传输，实时逐字显示 AI 回答（Windows 10 1803+）
 - **打字机效果** — 无 curl 环境自动降级为同步请求 + 打字机动画
 - **Markdown 渲染** — 将 AI 返回的 Markdown 转为 Access 富文本 HTML，支持：
@@ -35,7 +48,7 @@
 | Microsoft Access | 2010 及以上（推荐 2016+） |
 | Windows | 7 及以上（流式输出需 Windows 10 1803+） |
 | VBA 引用 | Microsoft Scripting Runtime |
-| AI API Key | [DeepSeek](https://platform.deepseek.com/) API Key |
+| AI API Key | [DeepSeek](https://platform.deepseek.com/)、[通义千问](https://dashscope.console.aliyun.com/)、[文心一言](https://console.bce.baidu.com/qianfan/)、[Kimi](https://platform.moonshot.cn/) 的 API Key（按需配置） |
 
 ## 🚀 快速开始
 
@@ -52,13 +65,31 @@
 
 ### 3. 配置 API Key
 
-打开 `Module_Markdown` 模块，修改以下常量为你自己的 DeepSeek Key：
+打开 `Module_Markdown` 模块，根据你要使用的 AI 模型，修改对应的 Key：
 
 ```vba
-Private Const API_KEY   As String = "你的-API-Key"
-Private Const API_URL   As String = "https://api.deepseek.com/chat/completions"
-Private Const API_MODEL As String = "deepseek-chat"
+' DeepSeek
+Private Const DS_KEY   As String = "你的-DeepSeek-Key"
+Private Const DS_URL   As String = "https://api.deepseek.com/chat/completions"
+Private Const DS_MODEL As String = "deepseek-chat"
+
+' 通义千问 (阿里云百炼)
+Private Const QW_KEY   As String = "你的-通义千问-Key"
+Private Const QW_URL   As String = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+Private Const QW_MODEL As String = "qwen-plus"
+
+' 文心一言 (百度千帆)
+Private Const WX_KEY   As String = "你的-文心一言-Key"
+Private Const WX_URL   As String = "https://qianfan.baidubce.com/v2/chat/completions"
+Private Const WX_MODEL As String = "ernie-4.0-8k"
+
+' Kimi (月之暗面)
+Private Const KM_KEY   As String = "你的-Kimi-Key"
+Private Const KM_URL   As String = "https://api.moonshot.cn/v1/chat/completions"
+Private Const KM_MODEL As String = "moonshot-v1-8k"
 ```
+
+> 💡 只需配置你实际使用的模型的 Key，其他保持默认即可。
 
 ### 4. 创建窗体并使用
 
@@ -68,7 +99,7 @@ Private Const API_MODEL As String = "deepseek-chat"
 CreateAIForm
 ```
 
-然后在 Access 中打开窗体 `frmAI`，输入问题，点击 **[提问]** 即可！
+然后在 Access 中打开窗体 `frmAI`，从下拉框选择 AI 模型，输入问题，点击 **[提问]** 即可！
 
 ## 📁 项目结构
 
@@ -76,7 +107,8 @@ CreateAIForm
 AccessAI/
 ├── AI.accdb                 # 示例 Access 数据库（含已导入的模块和窗体）
 ├── JsonConverter.bas        # JSON 解析模块 (VBA-JSON v2.3.1)
-├── Module_Markdown.bas      # 核心模块：AI 调用 + Markdown 渲染 + 窗体生成
+├── Module_Markdown.bas      # 核心模块：AI 调用 + Markdown 渲染 + 窗体生成 + 历史管理
+├── 1.png                    # 界面截图
 └── README.md                # 项目说明
 ```
 
@@ -87,8 +119,9 @@ AccessAI/
 | 功能分区 | 说明 |
 |----------|------|
 | Markdown → 富文本 HTML | `MarkdownToRichText()` 将 Markdown 转为 Access 富文本控件支持的 HTML |
-| DeepSeek API 调用 | 方案A：`StreamWithCurl` 流式 SSE 输出；方案B：`SyncWithTypewriter` 同步+打字机 |
-| 窗体自动创建 | `CreateAIForm` 创建 AI 问答窗体；`CreateMarkdownForm` 创建 Markdown 查看器 |
+| AI API 调用 (多模型) | 支持 DeepSeek/通义千问/文心一言/Kimi；方案A：`StreamWithCurl` 流式 SSE；方案B：`SyncWithTypewriter` 同步+打字机 |
+| 对话历史持久化 | 自动建表 `tblChatHistory`，保存/加载/删除会话记录 |
+| 窗体自动创建 | `CreateAIForm` 创建 AI 问答窗体；`CreateHistoryForm` 创建历史会话窗体；`CreateMarkdownForm` 创建 Markdown 查看器 |
 | 工具函数 | SSE 解析、UTF-8 读写、JSON 序列化、正则辅助等 |
 
 ### 公开方法
@@ -96,6 +129,15 @@ AccessAI/
 ```vba
 ' 创建 AI 问答窗体
 CreateAIForm
+
+' 创建历史会话管理窗体
+CreateHistoryForm
+
+' 打开历史会话管理窗体
+ShowChatHistory
+
+' 清除当前对话历史
+ClearHistory
 
 ' 创建 Markdown 查看器窗体
 CreateMarkdownForm
@@ -105,22 +147,20 @@ ShowMarkdown "# 标题" & vbCrLf & "**正文**"
 
 ' 将 Markdown 写入指定富文本控件
 SetTextBoxMarkdown Me.txtResult, sMarkdown
-
-' 运行 Markdown 渲染演示
-MarkdownDemo
 ```
 
 ## 🗺️ 路线图
 
 - [x] DeepSeek 模型支持
-- [ ] OpenAI (GPT) 模型支持
-- [ ] 通义千问模型支持
-- [ ] 文心一言模型支持
-- [ ] Kimi 模型支持
-- [ ] 多模型统一切换界面
-- [ ] 对话历史记录
+- [x] 通义千问模型支持
+- [x] 文心一言模型支持
+- [x] Kimi 模型支持
+- [x] 多模型统一切换界面
+- [x] 对话历史记录
+- [x] 历史对话持久化存储与管理
+- [x] 自定义 API 端点支持
+- [x] 现代化 UI（DeepSeek / Gemini 风格）
 - [ ] 系统提示词 (System Prompt) 配置
-- [ ] 自定义 API 端点支持
 
 ## 🐛 问题反馈
 
@@ -163,18 +203,31 @@ MarkdownDemo
 
 **An open-source VBA toolkit that seamlessly connects Microsoft Access to AI large language models.**
 
-> Call DeepSeek and other AI models directly from Access — with streaming output, Markdown rendering, and typewriter effects, ready to use out of the box.
+> Call DeepSeek, Qwen, ERNIE Bot, Kimi and other AI models directly from Access — with streaming output, Markdown rendering, and typewriter effects, ready to use out of the box.
 
 ![Access](https://img.shields.io/badge/Microsoft%20Access-2010%2B-green)
 ![VBA](https://img.shields.io/badge/VBA-7.x-blue)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
 ![DeepSeek](https://img.shields.io/badge/AI-DeepSeek-purple)
+![Qwen](https://img.shields.io/badge/AI-Qwen-blue)
+![ERNIE](https://img.shields.io/badge/AI-ERNIE-red)
+![Kimi](https://img.shields.io/badge/AI-Kimi-orange)
+
+---
+
+![AccessAI Interface](1.png)
 
 ---
 
 ## ✨ Features
 
-- **AI Q&A Chat** — Ask DeepSeek questions directly from an Access form and get intelligent answers
+- **Multi-Model Support** — Built-in support for DeepSeek, Alibaba Qwen, Baidu ERNIE, and Kimi — switch models via dropdown
+- **AI Q&A Chat** — Ask AI questions directly from an Access form and get intelligent answers
+- **Conversation History** — Automatically maintains conversation context so the AI remembers previous exchanges; click "New Chat" to reset
+- **Persistent History Storage** — Conversations are automatically saved to an Access table `tblChatHistory` and persist across sessions
+- **History Session Management** — Browse, load, and delete historical sessions via the `frmChatHistory` form
+- **Custom API Endpoint** — Configure any OpenAI-compatible API by selecting “Custom” from the model dropdown and entering URL, Key, and Model name
+- **Modern UI** — DeepSeek / Gemini-inspired design with clean white background and blue-purple accents
 - **Streaming Output (SSE)** — Real-time token-by-token display via curl-based SSE streaming (Windows 10 1803+)
 - **Typewriter Effect** — Automatic fallback to synchronous request + typewriter animation when curl is unavailable
 - **Markdown Rendering** — Converts AI-returned Markdown to Access Rich Text HTML, supporting:
@@ -194,7 +247,7 @@ MarkdownDemo
 | Microsoft Access | 2010 or later (2016+ recommended) |
 | Windows | 7 or later (streaming requires Windows 10 1803+) |
 | VBA Reference | Microsoft Scripting Runtime |
-| AI API Key | [DeepSeek](https://platform.deepseek.com/) API Key |
+| AI API Key | API Keys from [DeepSeek](https://platform.deepseek.com/), [Alibaba Qwen](https://dashscope.console.aliyun.com/), [Baidu ERNIE](https://console.bce.baidu.com/qianfan/), [Kimi](https://platform.moonshot.cn/) (configure as needed) |
 
 ## 🚀 Quick Start
 
@@ -211,13 +264,31 @@ In the VBA Editor: **Tools → References → Check `Microsoft Scripting Runtime
 
 ### 3. Configure API Key
 
-Open the `Module_Markdown` module and update these constants with your own DeepSeek Key:
+Open the `Module_Markdown` module and update the API Keys for the models you want to use:
 
 ```vba
-Private Const API_KEY   As String = "your-API-Key"
-Private Const API_URL   As String = "https://api.deepseek.com/chat/completions"
-Private Const API_MODEL As String = "deepseek-chat"
+' DeepSeek
+Private Const DS_KEY   As String = "your-DeepSeek-Key"
+Private Const DS_URL   As String = "https://api.deepseek.com/chat/completions"
+Private Const DS_MODEL As String = "deepseek-chat"
+
+' Alibaba Qwen (通义千问)
+Private Const QW_KEY   As String = "your-Qwen-Key"
+Private Const QW_URL   As String = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+Private Const QW_MODEL As String = "qwen-plus"
+
+' Baidu ERNIE (文心一言)
+Private Const WX_KEY   As String = "your-ERNIE-Key"
+Private Const WX_URL   As String = "https://qianfan.baidubce.com/v2/chat/completions"
+Private Const WX_MODEL As String = "ernie-4.0-8k"
+
+' Kimi (Moonshot AI)
+Private Const KM_KEY   As String = "your-Kimi-Key"
+Private Const KM_URL   As String = "https://api.moonshot.cn/v1/chat/completions"
+Private Const KM_MODEL As String = "moonshot-v1-8k"
 ```
+
+> 💡 You only need to configure the Key for the model(s) you actually use.
 
 ### 4. Create Form and Go
 
@@ -227,7 +298,7 @@ Run in the VBA Immediate Window:
 CreateAIForm
 ```
 
-Then open the form `frmAI` in Access, type your question, and click **[Ask]**!
+Then open the form `frmAI` in Access, select an AI model from the dropdown, type your question, and click **[Ask]**!
 
 ## 📁 Project Structure
 
@@ -235,7 +306,8 @@ Then open the form `frmAI` in Access, type your question, and click **[Ask]**!
 AccessAI/
 ├── AI.accdb                 # Sample Access database (modules & forms included)
 ├── JsonConverter.bas        # JSON parsing module (VBA-JSON v2.3.1)
-├── Module_Markdown.bas      # Core module: AI calls + Markdown rendering + form generation
+├── Module_Markdown.bas      # Core module: AI calls + Markdown rendering + form generation + history management
+├── 1.png                    # Interface screenshot
 └── README.md                # Project documentation
 ```
 
@@ -246,8 +318,9 @@ AccessAI/
 | Section | Description |
 |---------|-------------|
 | Markdown → Rich Text HTML | `MarkdownToRichText()` converts Markdown to HTML supported by Access Rich Text controls |
-| DeepSeek API Calls | Plan A: `StreamWithCurl` for SSE streaming; Plan B: `SyncWithTypewriter` for sync + typewriter |
-| Auto Form Creation | `CreateAIForm` creates the AI Q&A form; `CreateMarkdownForm` creates a Markdown viewer |
+| AI API Calls (Multi-Model) | Supports DeepSeek/Qwen/ERNIE/Kimi; Plan A: `StreamWithCurl` for SSE streaming; Plan B: `SyncWithTypewriter` for sync + typewriter |
+| Persistent Chat History | Auto-creates `tblChatHistory` table; saves/loads/deletes session records |
+| Auto Form Creation | `CreateAIForm` creates the AI Q&A form; `CreateHistoryForm` creates the history session form; `CreateMarkdownForm` creates a Markdown viewer |
 | Utilities | SSE parsing, UTF-8 read/write, JSON serialization, regex helpers, etc. |
 
 ### Public Methods
@@ -255,6 +328,15 @@ AccessAI/
 ```vba
 ' Create AI Q&A form
 CreateAIForm
+
+' Create history session management form
+CreateHistoryForm
+
+' Open history session management form
+ShowChatHistory
+
+' Clear current conversation history
+ClearHistory
 
 ' Create Markdown viewer form
 CreateMarkdownForm
@@ -264,22 +346,20 @@ ShowMarkdown "# Title" & vbCrLf & "**Body text**"
 
 ' Write Markdown to a specific Rich Text control
 SetTextBoxMarkdown Me.txtResult, sMarkdown
-
-' Run Markdown rendering demo
-MarkdownDemo
 ```
 
 ## 🗺️ Roadmap
 
 - [x] DeepSeek model support
-- [ ] OpenAI (GPT) model support
-- [ ] Alibaba Qwen model support
-- [ ] Baidu ERNIE model support
-- [ ] Kimi model support
-- [ ] Unified multi-model switching UI
-- [ ] Conversation history
+- [x] Alibaba Qwen model support
+- [x] Baidu ERNIE model support
+- [x] Kimi model support
+- [x] Unified multi-model switching UI
+- [x] Conversation history
+- [x] Persistent history storage & session management
+- [x] Custom API endpoint support
+- [x] Modern UI (DeepSeek / Gemini style)
 - [ ] System Prompt configuration
-- [ ] Custom API endpoint support
 
 ## 🐛 Bug Reports
 
