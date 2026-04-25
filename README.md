@@ -27,6 +27,8 @@
 - **对话历史记录** — 自动保持对话上下文，AI 能记住之前的对话内容，点击「新对话」重置
 - **历史对话持久化** — 对话记录自动保存至 Access 数据表 `tblChatHistory`，关闭数据库后仍可查阅
 - **历史会话管理** — 通过 `frmChatHistory` 窗体浏览、加载、删除历史会话
+- **系统提示词配置** — 在主窗体中填写 System Prompt，统一控制 AI 的角色、语气和回答规则
+- **数据库对象分析** — 选择当前数据库中的表或查询，自动读取字段结构、记录数和样例数据交给 AI 分析
 - **自定义 API 端点** — 支持配置任意 OpenAI 兼容 API，模型下拉框选择「自定义」后填写 URL、Key、模型名称
 - **现代化 UI** — 参考 DeepSeek / Gemini 风格设计，白色背景 + 蓝紫色调，简洁美观
 - **流式输出 (SSE)** — 基于 curl 的流式传输，实时逐字显示 AI 回答（Windows 10 1803+）
@@ -39,6 +41,7 @@
   - 引用块、水平线
   - 链接、图片提示
 - **一键建表单** — `CreateAIForm` 自动生成 AI 问答窗体，零手动配置
+- **双对话模式** — 保留 Access 富文本模式，并新增 WebBrowser HTML 气泡对话模式
 - **UTF-8 全面支持** — 中文输入/输出无乱码
 
 ## 📋 环境要求
@@ -101,6 +104,16 @@ CreateAIForm
 
 然后在 Access 中打开窗体 `frmAI`，从下拉框选择 AI 模型，输入问题，点击 **[提问]** 即可！
 
+可选对话模式：
+
+```vba
+' 默认：Access 富文本对话模式
+CreateAIForm
+
+' 方案A：WebBrowser HTML 气泡对话模式
+CreateAIWebForm
+```
+
 ## 📁 项目结构
 
 ```
@@ -119,7 +132,9 @@ AccessAI/
 | 功能分区 | 说明 |
 |----------|------|
 | Markdown → 富文本 HTML | `MarkdownToRichText()` 将 Markdown 转为 Access 富文本控件支持的 HTML |
-| AI API 调用 (多模型) | 支持 DeepSeek/通义千问/文心一言/Kimi；方案A：`StreamWithCurl` 流式 SSE；方案B：`SyncWithTypewriter` 同步+打字机 |
+| AI API 调用 (多模型) | 支持 DeepSeek/通义千问/文心一言/Kimi；支持 System Prompt；方案A：`StreamWithCurl` 流式 SSE；方案B：`SyncWithTypewriter` 同步+打字机 |
+| 数据库对象分析 | 读取当前 Access 数据库中的表/查询，生成字段结构、记录数和前 30 行样例数据供 AI 分析 |
+| 对话 UI 模式 | `CreateAIForm` 富文本模式；`CreateAIWebForm` WebBrowser HTML 气泡模式 |
 | 对话历史持久化 | 自动建表 `tblChatHistory`，保存/加载/删除会话记录 |
 | 窗体自动创建 | `CreateAIForm` 创建 AI 问答窗体；`CreateHistoryForm` 创建历史会话窗体；`CreateMarkdownForm` 创建 Markdown 查看器 |
 | 工具函数 | SSE 解析、UTF-8 读写、JSON 序列化、正则辅助等 |
@@ -160,7 +175,9 @@ SetTextBoxMarkdown Me.txtResult, sMarkdown
 - [x] 历史对话持久化存储与管理
 - [x] 自定义 API 端点支持
 - [x] 现代化 UI（DeepSeek / Gemini 风格）
-- [ ] 系统提示词 (System Prompt) 配置
+- [x] 系统提示词 (System Prompt) 配置
+- [x] 当前数据库表/查询分析
+- [x] WebBrowser HTML 气泡对话模式
 
 ## 🐛 问题反馈
 
@@ -226,6 +243,8 @@ SetTextBoxMarkdown Me.txtResult, sMarkdown
 - **Conversation History** — Automatically maintains conversation context so the AI remembers previous exchanges; click "New Chat" to reset
 - **Persistent History Storage** — Conversations are automatically saved to an Access table `tblChatHistory` and persist across sessions
 - **History Session Management** — Browse, load, and delete historical sessions via the `frmChatHistory` form
+- **System Prompt Configuration** — Set a System Prompt in the main form to control the AI role, tone, and response rules
+- **Database Object Analysis** — Select a table or query from the current database and send schema, row count, and sample rows to AI for analysis
 - **Custom API Endpoint** — Configure any OpenAI-compatible API by selecting “Custom” from the model dropdown and entering URL, Key, and Model name
 - **Modern UI** — DeepSeek / Gemini-inspired design with clean white background and blue-purple accents
 - **Streaming Output (SSE)** — Real-time token-by-token display via curl-based SSE streaming (Windows 10 1803+)
@@ -238,6 +257,7 @@ SetTextBoxMarkdown Me.txtResult, sMarkdown
   - Blockquotes, horizontal rules
   - Links, image placeholders
 - **One-Click Form Creation** — `CreateAIForm` auto-generates the AI Q&A form with zero manual configuration
+- **Two Chat UI Modes** — Access Rich Text mode and WebBrowser HTML bubble chat mode
 - **Full UTF-8 Support** — No garbled text for Chinese or other multibyte characters
 
 ## 📋 Requirements
@@ -300,6 +320,16 @@ CreateAIForm
 
 Then open the form `frmAI` in Access, select an AI model from the dropdown, type your question, and click **[Ask]**!
 
+Optional chat UI modes:
+
+```vba
+' Default: Access Rich Text chat mode
+CreateAIForm
+
+' Plan A: WebBrowser HTML bubble chat mode
+CreateAIWebForm
+```
+
 ## 📁 Project Structure
 
 ```
@@ -318,7 +348,9 @@ AccessAI/
 | Section | Description |
 |---------|-------------|
 | Markdown → Rich Text HTML | `MarkdownToRichText()` converts Markdown to HTML supported by Access Rich Text controls |
-| AI API Calls (Multi-Model) | Supports DeepSeek/Qwen/ERNIE/Kimi; Plan A: `StreamWithCurl` for SSE streaming; Plan B: `SyncWithTypewriter` for sync + typewriter |
+| AI API Calls (Multi-Model) | Supports DeepSeek/Qwen/ERNIE/Kimi; supports System Prompt; Plan A: `StreamWithCurl` for SSE streaming; Plan B: `SyncWithTypewriter` for sync + typewriter |
+| Database Object Analysis | Reads tables/queries from the current Access database and sends schema, row count, and the first 30 sample rows to AI |
+| Chat UI Modes | `CreateAIForm` for Rich Text mode; `CreateAIWebForm` for WebBrowser HTML bubble mode |
 | Persistent Chat History | Auto-creates `tblChatHistory` table; saves/loads/deletes session records |
 | Auto Form Creation | `CreateAIForm` creates the AI Q&A form; `CreateHistoryForm` creates the history session form; `CreateMarkdownForm` creates a Markdown viewer |
 | Utilities | SSE parsing, UTF-8 read/write, JSON serialization, regex helpers, etc. |
@@ -359,7 +391,9 @@ SetTextBoxMarkdown Me.txtResult, sMarkdown
 - [x] Persistent history storage & session management
 - [x] Custom API endpoint support
 - [x] Modern UI (DeepSeek / Gemini style)
-- [ ] System Prompt configuration
+- [x] System Prompt configuration
+- [x] Current database table/query analysis
+- [x] WebBrowser HTML bubble chat mode
 
 ## 🐛 Bug Reports
 

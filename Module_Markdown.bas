@@ -22,9 +22,20 @@ Option Explicit
 ' ---------- Win32 Sleep ----------
 #If VBA7 Then
     Private Declare PtrSafe Sub Sleep Lib "kernel32" (ByVal dwMilliseconds As Long)
+    Private Declare PtrSafe Function GetFocus Lib "user32" () As LongPtr
+    Private Declare PtrSafe Function SendMessageA Lib "user32" ( _
+        ByVal hWnd As LongPtr, ByVal wMsg As Long, _
+        ByVal wParam As LongPtr, ByVal lParam As LongPtr) As LongPtr
 #Else
     Private Declare Sub Sleep Lib "kernel32" (ByVal dwMilliseconds As Long)
+    Private Declare Function GetFocus Lib "user32" () As Long
+    Private Declare Function SendMessageA Lib "user32" ( _
+        ByVal hWnd As Long, ByVal wMsg As Long, _
+        ByVal wParam As Long, ByVal lParam As Long) As Long
 #End If
+
+Private Const WM_VSCROLL As Long = &H115
+Private Const SB_BOTTOM As Long = 7
 
 ' ---------- AI 提供商配置 ----------
 ' 请将下方 Key 替换为你自己的 API Key
@@ -32,7 +43,7 @@ Option Explicit
 ' DeepSeek
 Private Const DS_KEY   As String = "sk-XXXXXXXXXXXXXXXXXXXX"
 Private Const DS_URL   As String = "https://api.deepseek.com/chat/completions"
-Private Const DS_MODEL As String = "deepseek-chat"
+Private Const DS_MODEL As String = "deepseek-v4-pro"
 
 ' 通义千问 (阿里云百炼)
 Private Const QW_KEY   As String = "sk-XXXXXXXXXXXXXXXXXXXX"
@@ -50,6 +61,7 @@ Private Const KM_URL   As String = "https://api.moonshot.cn/v1/chat/completions"
 Private Const KM_MODEL As String = "moonshot-v1-8k"
 
 Private Const AI_FORM   As String = "frmAI"
+Private Const AI_WEB_FORM As String = "frmAIWeb"
 Private Const MD_FORM   As String = "frmMarkdownViewer"
 Private Const TXT_MD    As String = "txtMarkdown"
 
@@ -57,6 +69,10 @@ Private Const TXT_MD    As String = "txtMarkdown"
 Private m_colHistory As Collection
 Private m_sLastAnswer As String
 Private m_sSessionId As String
+
+' 当前会话在 txtAnswer 中累积的富文本 HTML(对话气泡)
+Private m_sChatHtml As String
+Private m_sStreamingAnswer As String
 
 Private Const HISTORY_TABLE As String = "tblChatHistory"
 Private Const HISTORY_FORM As String = "frmChatHistory"
@@ -295,7 +311,482 @@ Public Sub ClearHistory()
     Set m_colHistory = New Collection
     m_sLastAnswer = ""
     m_sSessionId = NewSessionId()
+    m_sChatHtml = ""
+    m_sStreamingAnswer = ""
 End Sub
+
+'====================================================
+' 对话气泡 (Access 富文本 HTML)
+'   仅支持 <div align> / <font color> / <b> 等有限标签,
+'   无法设置背景色与圆角, 因此用 "右对齐+主题色" 代表用户,
+'   "左对齐+灰色" 代表 AI, 模拟网页聊天列表效果
+'====================================================
+Private Function HtmlEscapeText(ByVal s As String) As String
+    s = Replace(s, "&", "&amp;")
+    s = Replace(s, "<", "&lt;")
+    s = Replace(s, ">", "&gt;")
+    HtmlEscapeText = s
+End Function
+
+Private Function TextToRtBr(ByVal s As String) As String
+    s = HtmlEscapeText(s)
+    s = Replace(s, vbCrLf, vbLf)
+    s = Replace(s, vbCr, vbLf)
+    s = Replace(s, vbLf, "<br>")
+    TextToRtBr = s
+End Function
+
+Private Function BuildUserBubbleHtml(ByVal sText As String) As String
+    BuildUserBubbleHtml = _
+        "<div align=""right""><font color=""#4E6CFE"" face=""Microsoft YaHei""><b>我</b></font></div>" & _
+        "<div align=""right""><font color=""#1D1E20"" face=""Microsoft YaHei"">" & TextToRtBr(sText) & "</font></div>" & _
+        "<div>&nbsp;</div>"
+End Function
+
+Private Function BuildAiBubbleHtml(ByVal sMarkdown As String) As String
+    BuildAiBubbleHtml = _
+        "<div align=""left""><font color=""#868E99"" face=""Microsoft YaHei""><b>AI</b></font></div>" & _
+        "<div align=""left""><font color=""#1D1E20"" face=""Microsoft YaHei"">" & MarkdownToRichText(sMarkdown) & "</font></div>" & _
+        "<div>&nbsp;</div>"
+End Function
+
+Private Function BuildAiStreamingBubbleHtml(ByVal sText As String, ByVal bCursor As Boolean) As String
+    Dim s As String
+    s = TextToRtBr(sText)
+    If bCursor Then s = s & "<font color=""#4E6CFE"">&#9612;</font>"
+    BuildAiStreamingBubbleHtml = _
+        "<div align=""left""><font color=""#868E99"" face=""Microsoft YaHei""><b>AI</b></font></div>" & _
+        "<div align=""left""><font color=""#1D1E20"" face=""Microsoft YaHei"">" & s & "</font></div>" & _
+        "<div>&nbsp;</div>"
+End Function
+
+'====================================================
+' 将 txtAnswer 滚动到最底部 (显示最新消息)
+'   思路: SetFocus 后用 GetFocus() 拿到 Access 内部编辑控件 hWnd,
+'         再发 WM_VSCROLL(SB_BOTTOM) 把滚动条拉到底.
+'         参数 bKeepFocus=True 时保持焦点在 txtAnswer,
+'         这样用户可以直接用鼠标滚轮上下滚.
+'====================================================
+Private Sub ScrollAnswerToEnd(frm As Form, Optional ByVal bKeepFocus As Boolean = True)
+    On Error Resume Next
+    If HasControl(frm, "wbChat") Then
+        RefreshAlternateChatView frm
+        Exit Sub
+    End If
+
+    Dim ctlPrev As Control
+    Set ctlPrev = Screen.ActiveControl
+
+    PrepareAnswerBox frm
+    frm!txtAnswer.SetFocus
+#If VBA7 Then
+    Dim hEdit As LongPtr
+#Else
+    Dim hEdit As Long
+#End If
+    hEdit = GetFocus()
+    If hEdit <> 0 Then
+        SendMessageA hEdit, WM_VSCROLL, SB_BOTTOM, 0
+    End If
+
+    If Not bKeepFocus Then
+        If Not ctlPrev Is Nothing Then
+            If ctlPrev.Name <> "txtAnswer" Then ctlPrev.SetFocus
+        Else
+            frm!txtQ.SetFocus
+        End If
+    End If
+End Sub
+
+Private Sub PrepareAnswerBox(frm As Form)
+    On Error Resume Next
+    With frm!txtAnswer
+        .Enabled = True
+        .Locked = False
+        .TabStop = True
+        .ScrollBars = 2
+        .TextFormat = acTextFormatHTMLRichText
+    End With
+End Sub
+
+Private Function HasControl(frm As Form, ByVal sControlName As String) As Boolean
+    On Error GoTo NotFound
+    Dim ctl As Control
+    Set ctl = frm.Controls(sControlName)
+    HasControl = True
+    Exit Function
+NotFound:
+    HasControl = False
+End Function
+
+Private Sub RefreshAlternateChatView(frm As Form)
+    On Error Resume Next
+    If HasControl(frm, "wbChat") Then
+        RenderWebChat frm
+    End If
+End Sub
+
+'====================================================
+' 从当前 m_colHistory 重建全量气泡 HTML (加载历史会话时用)
+'====================================================
+Private Sub RebuildChatHtmlFromHistory()
+    Dim i As Long
+    Dim sRole As String, sContent As String
+    m_sChatHtml = ""
+    If m_colHistory Is Nothing Then Exit Sub
+    For i = 1 To m_colHistory.Count
+        sRole = CStr(m_colHistory(i)("role"))
+        sContent = CStr(m_colHistory(i)("content"))
+        If sRole = "user" Then
+            m_sChatHtml = m_sChatHtml & BuildUserBubbleHtml(sContent)
+        ElseIf sRole = "assistant" Then
+            m_sChatHtml = m_sChatHtml & BuildAiBubbleHtml(sContent)
+        End If
+    Next i
+End Sub
+
+Private Function GetSystemPromptFromForm(frm As Form) As String
+    On Error Resume Next
+    GetSystemPromptFromForm = Trim$(Nz(frm!txtSystemPrompt, ""))
+    If Err.Number = 0 Then SaveSystemPrompt GetSystemPromptFromForm
+End Function
+
+Private Function GetSavedSystemPrompt() As String
+    GetSavedSystemPrompt = GetSetting("AccessAI", "Settings", "SystemPrompt", "")
+End Function
+
+Private Sub SaveSystemPrompt(ByVal sSystemPrompt As String)
+    SaveSetting "AccessAI", "Settings", "SystemPrompt", sSystemPrompt
+End Sub
+
+'====================================================
+' 方案A: WebBrowser HTML 对话窗口渲染
+'====================================================
+Private Function WebHtmlEscape(ByVal s As String) As String
+    s = Replace(s, "&", "&amp;")
+    s = Replace(s, "<", "&lt;")
+    s = Replace(s, ">", "&gt;")
+    s = Replace(s, """", "&quot;")
+    WebHtmlEscape = s
+End Function
+
+Private Function TextToWebHtml(ByVal s As String) As String
+    s = WebHtmlEscape(s)
+    s = Replace(s, vbCrLf, vbLf)
+    s = Replace(s, vbCr, vbLf)
+    s = Replace(s, vbLf, "<br>")
+    TextToWebHtml = s
+End Function
+
+Private Function MarkdownToWebHtml(ByVal sMd As String) As String
+    MarkdownToWebHtml = MarkdownToRichText(sMd)
+End Function
+
+Private Function BuildWebBubble(ByVal sRole As String, ByVal sContent As String, Optional ByVal bStreaming As Boolean = False) As String
+    Dim sBody As String
+
+    If sRole = "user" Then
+        sBody = TextToWebHtml(sContent)
+    Else
+        If bStreaming Then
+            sBody = TextToWebHtml(sContent) & "<span class='cursor'></span>"
+        Else
+            sBody = MarkdownToWebHtml(sContent)
+        End If
+    End If
+
+    If sRole = "user" Then
+        BuildWebBubble = _
+            "<table class='msgRow' width='100%' cellpadding='0' cellspacing='0' border='0' style='margin:0 0 14px 0;'>" & _
+            "<tr><td width='24%'>&nbsp;</td><td width='76%' align='right'>" & _
+            "<table class='userWrap' width='100%' cellpadding='0' cellspacing='0' border='0' style='background:#f2f8ee;border-right:4px solid #61b875;padding:10px 12px;'>" & _
+            "<tr><td align='right' valign='top'>" & _
+            "<table class='bubble userBubble' cellpadding='0' cellspacing='0' border='0' align='right' style='background:#2f7dff;border:1px solid #2f7dff;color:#ffffff;font-family:Microsoft YaHei,Arial;font-size:14px;line-height:1.65;text-align:left;'><tr><td style='padding:12px 15px;color:#ffffff;'>" & sBody & "</td></tr></table>" & _
+            "</td><td width='44' align='right' valign='top'><div class='avatar userAvatar' style='width:34px;height:34px;line-height:34px;text-align:center;font-size:12px;font-weight:bold;background:#61b875;color:#ffffff;font-family:Microsoft YaHei,Arial;'>我</div></td></tr>" & _
+            "</table></td></tr></table>"
+    Else
+        BuildWebBubble = _
+            "<table class='msgRow' width='100%' cellpadding='0' cellspacing='0' border='0' style='margin:0 0 14px 0;'>" & _
+            "<tr><td width='76%' align='left'>" & _
+            "<table class='aiWrap' width='100%' cellpadding='0' cellspacing='0' border='0' style='background:#f7fbff;border-left:4px solid #6aa6ff;padding:10px 12px;'>" & _
+            "<tr><td width='44' align='left' valign='top'><div class='avatar aiAvatar' style='width:34px;height:34px;line-height:34px;text-align:center;font-size:12px;font-weight:bold;background:#dcecff;color:#255f9e;font-family:Microsoft YaHei,Arial;'>AI</div></td>" & _
+            "<td align='left' valign='top'><table class='bubble aiBubble' cellpadding='0' cellspacing='0' border='0' style='background:#ffffff;border:1px solid #dbe7f5;color:#1d1e20;font-family:Microsoft YaHei,Arial;font-size:14px;line-height:1.65;text-align:left;'><tr><td style='padding:12px 15px;color:#1d1e20;'>" & sBody & "</td></tr></table></td></tr>" & _
+            "</table></td><td width='24%'>&nbsp;</td></tr></table>"
+    End If
+End Function
+
+Private Function BuildWebChatBody(ByVal frm As Form) As String
+    On Error Resume Next
+    Dim i As Long
+    Dim sBody As String
+    Dim sRole As String
+    Dim sContent As String
+
+    If Not m_colHistory Is Nothing Then
+        For i = 1 To m_colHistory.Count
+            sRole = CStr(m_colHistory(i)("role"))
+            sContent = CStr(m_colHistory(i)("content"))
+            If sRole = "user" Or sRole = "assistant" Then
+                sBody = sBody & BuildWebBubble(sRole, sContent)
+            End If
+        Next i
+    End If
+
+    If Len(m_sStreamingAnswer) > 0 Then
+        sBody = sBody & BuildWebBubble("assistant", m_sStreamingAnswer, (Len(m_sLastAnswer) = 0))
+    End If
+
+    If Len(sBody) = 0 Then
+        sBody = "<div class='empty'>开始一次对话，AI 的回复会显示在这里。</div>"
+    End If
+    BuildWebChatBody = sBody
+End Function
+
+Private Function ExtractStreamingTextFromRichHtml(ByVal sHtml As String) As String
+    On Error Resume Next
+    Dim s As String
+    Dim p As Long
+    s = sHtml
+    p = InStrRev(s, "<b>AI</b>")
+    If p > 0 Then s = Mid$(s, p + Len("<b>AI</b>"))
+    s = Replace(s, "&#9612;", "")
+    s = Replace(s, "<br>", vbCrLf)
+    s = Replace(s, "<div>&nbsp;</div>", "")
+    Dim re As Object
+    Set re = MakeRE("<[^>]+>")
+    s = re.Replace(s, "")
+    s = Replace(s, "&lt;", "<")
+    s = Replace(s, "&gt;", ">")
+    s = Replace(s, "&amp;", "&")
+    s = Trim$(s)
+    ExtractStreamingTextFromRichHtml = s
+End Function
+
+Private Function BuildWebChatDocument(ByVal sBodyHtml As String) As String
+    BuildWebChatDocument = "<!doctype html><html><head><meta http-equiv='X-UA-Compatible' content='IE=edge'>" & _
+        "<meta charset='utf-8'><style>" & _
+        "html,body{height:100%;}body{margin:0;padding:18px 22px;font-family:'Microsoft YaHei',Segoe UI,Arial,sans-serif;background:#e9eef5;color:#1d1e20;font-size:14px;line-height:1.65;}" & _
+        ".msgRow{margin:0 0 14px 0;}.aiWrap{background:#f7fbff;border-left:4px solid #6aa6ff;}.userWrap{background:#f2f8ee;border-right:4px solid #61b875;}" & _
+        ".aiWrap,.userWrap{padding:10px 12px;}.avatar{width:34px;height:34px;line-height:34px;text-align:center;font-size:12px;font-weight:bold;font-family:'Microsoft YaHei',Arial,sans-serif;}" & _
+        ".aiAvatar{background:#dcecff;color:#255f9e;}.userAvatar{background:#61b875;color:#ffffff;}" & _
+        ".bubble{font-family:'Microsoft YaHei',Segoe UI,Arial,sans-serif;font-size:14px;line-height:1.65;text-align:left;word-wrap:break-word;}.bubble td{padding:12px 15px;}.aiBubble{background:#ffffff;border:1px solid #dbe7f5;color:#1d1e20;}.userBubble{background:#2f7dff;border:1px solid #2f7dff;color:#ffffff;}" & _
+        ".bubble p{margin:5px 0 10px}.bubble ul,.bubble ol{margin-top:6px;margin-bottom:10px;padding-left:22px}.bubble code,.bubble pre,.bubble .code{font-family:Consolas,monospace}.bubble a{color:#0366d6}.userBubble font,.userBubble a{color:#fff!important}.empty{padding-top:120px;text-align:center;color:#7d8796;font-size:13px}.cursor{display:inline-block;width:8px;height:16px;margin-left:2px;background:#2f7dff;}" & _
+        "</style></head><body>" & sBodyHtml & _
+        "<script>window.scrollTo(0,document.body.scrollHeight);</script></body></html>"
+End Function
+
+Private Function TryCreateWebBrowserControl(frm As Form, ByRef ctlOut As Control) As Boolean
+    Dim vProgIds As Variant
+    Dim i As Long
+    Dim ctl As Control
+
+    vProgIds = Array("Shell.Explorer.2", "Shell.Explorer", "Microsoft Web Browser", "WebBrowser.WebBrowser.1", "{8856F961-340A-11D0-A96B-00C04FD705A2}")
+    For i = LBound(vProgIds) To UBound(vProgIds)
+        Err.Clear
+        On Error Resume Next
+        Set ctl = CreateControl(frm.Name, acCustomControl, acDetail, , CStr(vProgIds(i)), 500, 2080, 13400, 6360)
+        If Err.Number = 0 And Not ctl Is Nothing Then
+            ctl.Name = "wbChat"
+            Set ctlOut = ctl
+            TryCreateWebBrowserControl = True
+            On Error GoTo 0
+            Exit Function
+        End If
+        Set ctl = Nothing
+        On Error GoTo 0
+    Next i
+End Function
+
+Private Sub RenderWebChat(frm As Form)
+    On Error Resume Next
+    Dim wb As Object
+    Set wb = frm!wbChat.Object
+    If wb Is Nothing Then Exit Sub
+
+    If wb.LocationURL = "" Then
+        wb.Navigate "about:blank"
+        DoEvents
+    End If
+
+    Dim sHtml As String
+    sHtml = BuildWebChatDocument(BuildWebChatBody(frm))
+    wb.Document.Open
+    wb.Document.Write sHtml
+    wb.Document.Close
+    wb.Document.parentWindow.scrollTo 0, wb.Document.body.scrollHeight
+End Sub
+
+'====================================================
+' 当前数据库对象分析辅助
+'====================================================
+Private Function BracketName(ByVal sName As String) As String
+    BracketName = "[" & Replace(sName, "]", "]]") & "]"
+End Function
+
+Private Function MdCell(ByVal v As Variant, Optional ByVal lMaxLen As Long = 120) As String
+    Dim s As String
+    If IsNull(v) Then
+        MdCell = "(Null)"
+        Exit Function
+    End If
+    If IsDate(v) Then
+        s = Format$(CDate(v), "yyyy-mm-dd hh:nn:ss")
+    Else
+        s = CStr(v)
+    End If
+    s = Replace(s, vbCrLf, " ")
+    s = Replace(s, vbCr, " ")
+    s = Replace(s, vbLf, " ")
+    s = Replace(s, "|", "\|")
+    If Len(s) > lMaxLen Then s = Left$(s, lMaxLen) & "..."
+    MdCell = s
+End Function
+
+Private Function DaoTypeName(ByVal lType As Long) As String
+    Select Case lType
+        Case dbBoolean: DaoTypeName = "Yes/No"
+        Case dbByte: DaoTypeName = "Byte"
+        Case dbInteger: DaoTypeName = "Integer"
+        Case dbLong: DaoTypeName = "Long"
+        Case dbCurrency: DaoTypeName = "Currency"
+        Case dbSingle: DaoTypeName = "Single"
+        Case dbDouble: DaoTypeName = "Double"
+        Case dbDate: DaoTypeName = "Date/Time"
+        Case dbText: DaoTypeName = "Short Text"
+        Case dbLongBinary: DaoTypeName = "OLE/Object"
+        Case dbMemo: DaoTypeName = "Long Text"
+        Case dbGUID: DaoTypeName = "GUID"
+        Case 16: DaoTypeName = "BigInt"
+        Case 101: DaoTypeName = "Attachment/Complex"
+        Case 102 To 109: DaoTypeName = "Complex"
+        Case Else
+            DaoTypeName = "Type " & CStr(lType)
+    End Select
+End Function
+
+Private Function IsUserTableName(ByVal sName As String) As Boolean
+    IsUserTableName = (Left$(sName, 4) <> "MSys" And Left$(sName, 1) <> "~")
+End Function
+
+Private Function QuoteValueList(ByVal s As String) As String
+    QuoteValueList = """" & Replace(Replace(s, """", "'"), ";", ",") & """"
+End Function
+
+Private Function GetDbObjectRowSource() As String
+    On Error Resume Next
+    Dim sRows As String
+    Dim obj As AccessObject
+
+    For Each obj In CurrentData.AllTables
+        If IsUserTableName(obj.Name) Then
+            If Len(sRows) > 0 Then sRows = sRows & ";"
+            sRows = sRows & QuoteValueList("表: " & obj.Name)
+        End If
+    Next obj
+
+    For Each obj In CurrentData.AllQueries
+        If Len(sRows) > 0 Then sRows = sRows & ";"
+        sRows = sRows & QuoteValueList("查询: " & obj.Name)
+    Next obj
+
+    GetDbObjectRowSource = sRows
+End Function
+
+Private Function ParseDbObjectName(ByVal sDisplay As String) As String
+    If Left$(sDisplay, 3) = "表: " Then
+        ParseDbObjectName = Mid$(sDisplay, 4)
+    ElseIf Left$(sDisplay, 4) = "查询: " Then
+        ParseDbObjectName = Mid$(sDisplay, 5)
+    Else
+        ParseDbObjectName = sDisplay
+    End If
+End Function
+
+Private Function ParseDbObjectKind(ByVal sDisplay As String) As String
+    If Left$(sDisplay, 3) = "表: " Then
+        ParseDbObjectKind = "Table"
+    ElseIf Left$(sDisplay, 4) = "查询: " Then
+        ParseDbObjectKind = "Query"
+    Else
+        ParseDbObjectKind = "Table/Query"
+    End If
+End Function
+
+Private Function BuildDbObjectContext(ByVal sDisplayName As String, Optional ByVal lTopN As Long = 30) As String
+    On Error GoTo ErrHandler
+    Dim sObjectName As String
+    Dim sKind As String
+    Dim db As DAO.Database
+    Dim rsSchema As DAO.Recordset
+    Dim rsSample As DAO.Recordset
+    Dim rsCount As DAO.Recordset
+    Dim fld As DAO.Field
+    Dim sSqlName As String
+    Dim sOut As String
+    Dim lCount As Long
+    Dim i As Long
+    Dim lRow As Long
+
+    sObjectName = ParseDbObjectName(sDisplayName)
+    sKind = ParseDbObjectKind(sDisplayName)
+    sSqlName = BracketName(sObjectName)
+    Set db = CurrentDb
+
+    Set rsCount = db.OpenRecordset("SELECT Count(*) AS Cnt FROM " & sSqlName, dbOpenSnapshot)
+    If Not rsCount.EOF Then lCount = CLng(Nz(rsCount!Cnt, 0))
+    rsCount.Close
+
+    Set rsSchema = db.OpenRecordset("SELECT * FROM " & sSqlName & " WHERE 1=0", dbOpenSnapshot)
+    Set rsSample = db.OpenRecordset("SELECT TOP " & CStr(lTopN) & " * FROM " & sSqlName, dbOpenSnapshot)
+
+    sOut = "## 数据对象" & vbCrLf & _
+           "- 名称: " & sObjectName & vbCrLf & _
+           "- 类型: " & sKind & vbCrLf & _
+           "- 记录数: " & CStr(lCount) & vbCrLf & _
+           "- 样例行数: " & CStr(lTopN) & vbCrLf & vbCrLf
+
+    sOut = sOut & "## 字段结构" & vbCrLf & "| 字段 | 类型 | 大小 |" & vbCrLf & "|---|---|---:|" & vbCrLf
+    For Each fld In rsSchema.Fields
+        sOut = sOut & "| " & MdCell(fld.Name) & " | " & DaoTypeName(fld.Type) & " | " & CStr(fld.Size) & " |" & vbCrLf
+    Next fld
+
+    sOut = sOut & vbCrLf & "## 样例数据" & vbCrLf
+    If rsSchema.Fields.Count = 0 Then
+        sOut = sOut & "(无字段)" & vbCrLf
+    Else
+        sOut = sOut & "|"
+        For i = 0 To rsSchema.Fields.Count - 1
+            sOut = sOut & " " & MdCell(rsSchema.Fields(i).Name) & " |"
+        Next i
+        sOut = sOut & vbCrLf & "|"
+        For i = 0 To rsSchema.Fields.Count - 1
+            sOut = sOut & "---|"
+        Next i
+        sOut = sOut & vbCrLf
+
+        Do While Not rsSample.EOF And lRow < lTopN
+            sOut = sOut & "|"
+            For i = 0 To rsSample.Fields.Count - 1
+                sOut = sOut & " " & MdCell(rsSample.Fields(i).Value) & " |"
+            Next i
+            sOut = sOut & vbCrLf
+            lRow = lRow + 1
+            rsSample.MoveNext
+        Loop
+        If lRow = 0 Then sOut = sOut & "(无样例数据)" & vbCrLf
+    End If
+
+    rsSchema.Close
+    rsSample.Close
+
+    BuildDbObjectContext = sOut
+    Exit Function
+
+ErrHandler:
+    BuildDbObjectContext = "## 数据对象读取失败" & vbCrLf & _
+                           "- 对象: " & sDisplayName & vbCrLf & _
+                           "- 错误: " & Err.Description & vbCrLf
+End Function
 
 '====================================================
 ' 确保历史记录表存在
@@ -394,8 +885,9 @@ Public Function btnNewChat_Click()
     ClearHistory
     Dim frm As Form
     Set frm = Screen.ActiveForm
-    frm!txtAnswer.TextFormat = acTextFormatPlain
+    frm!txtAnswer.TextFormat = acTextFormatHTMLRichText
     frm!txtAnswer.Value = ""
+    RefreshAlternateChatView frm
     frm!lblMsg.Caption = "已开始新对话。选择模型，输入问题后点击发送"
 End Function
 
@@ -415,6 +907,70 @@ Public Function cboProvider_AfterUpdate()
     frm!txtCustomKey.Visible = bCustom
     frm!lblCustomModel.Visible = bCustom
     frm!txtCustomModel.Visible = bCustom
+End Function
+
+'====================================================
+' 系统提示词变更事件: 保存配置
+'====================================================
+Public Function txtSystemPrompt_AfterUpdate()
+    On Error Resume Next
+    Dim frm As Form
+    Set frm = Screen.ActiveForm
+    SaveSystemPrompt Trim$(Nz(frm!txtSystemPrompt, ""))
+End Function
+
+'====================================================
+' 数据对象下拉框获取焦点: 刷新表/查询列表
+'====================================================
+Public Function cboDbObject_GotFocus()
+    On Error Resume Next
+    Dim frm As Form
+    Set frm = Screen.ActiveForm
+    frm!cboDbObject.RowSource = GetDbObjectRowSource()
+    frm!cboDbObject.Requery
+End Function
+
+'====================================================
+' 按钮事件: 分析当前数据库中的表/查询
+'====================================================
+Public Function btnAnalyzeData_Click()
+    On Error GoTo ErrHandler
+    Dim frm As Form
+    Set frm = Screen.ActiveForm
+
+    Dim sDisplayName As String
+    sDisplayName = Nz(frm!cboDbObject, "")
+    If Len(Trim$(sDisplayName)) = 0 Then
+        MsgBox "请先选择一个表或查询。", vbInformation
+        Exit Function
+    End If
+
+    Dim sQuestion As String
+    sQuestion = Trim$(Nz(frm!txtQ, ""))
+    If Len(sQuestion) = 0 Then
+        sQuestion = "请分析这个数据对象的业务含义、关键字段、数据质量问题、可分析方向，并给出建议的 Access SQL 查询。"
+    End If
+
+    frm!lblMsg.Caption = "正在读取数据库对象..."
+    frm.Repaint
+
+    Dim sContext As String
+    sContext = BuildDbObjectContext(sDisplayName, 30)
+    If Left$(sContext, Len("## 数据对象读取失败")) = "## 数据对象读取失败" Then
+        frm!txtQ.Value = sContext
+        frm!lblMsg.Caption = "数据库对象读取失败。"
+        MsgBox "读取表/查询失败，请确认该对象不是参数查询、操作查询或受权限限制。", vbExclamation
+        Exit Function
+    End If
+
+    frm!txtQ.Value = sQuestion & vbCrLf & vbCrLf & _
+                     "下面是当前 Access 数据库对象的结构和样例数据，请基于这些内容分析，不要假设未提供的数据。" & vbCrLf & vbCrLf & _
+                     sContext
+    Askai
+    Exit Function
+
+ErrHandler:
+    MsgBox "btnAnalyzeData_Click: " & Err.Description, vbExclamation
 End Function
 
 '====================================================
@@ -582,10 +1138,10 @@ Public Function btnLoadSession_Click()
     DoCmd.OpenForm AI_FORM, acNormal
     Dim frmAI As Form
     Set frmAI = Forms(AI_FORM)
-    If Len(sLast) > 0 Then
-        frmAI!txtAnswer.TextFormat = acTextFormatHTMLRichText
-        frmAI!txtAnswer.Value = MarkdownToRichText(sLast)
-    End If
+    RebuildChatHtmlFromHistory
+    frmAI!txtAnswer.TextFormat = acTextFormatHTMLRichText
+    frmAI!txtAnswer.Value = m_sChatHtml
+    ScrollAnswerToEnd frmAI
     Dim lTurns As Long, ixH As Long
     lTurns = 0
     For ixH = 1 To m_colHistory.Count
@@ -656,20 +1212,34 @@ Public Sub Askai()
         End If
     End If
 
+    Dim sSystemPrompt As String
+    sSystemPrompt = GetSystemPromptFromForm(frm)
+
     ' 初始化并添加用户消息到历史
     InitHistory
+
+    ' 每次发送前都从历史重建显示 HTML, 避免模块状态重置导致前文丢失
+    RebuildChatHtmlFromHistory
+
     Dim oUserMsg As Object
     Set oUserMsg = CreateObject("Scripting.Dictionary")
     oUserMsg.Add "role", "user"
     oUserMsg.Add "content", sQuestion
     m_colHistory.Add oUserMsg
     m_sLastAnswer = ""
+    m_sStreamingAnswer = ""
+
+    ' 追加用户气泡到对话视图
+    RebuildChatHtmlFromHistory
+    frm!txtAnswer.TextFormat = acTextFormatHTMLRichText
+    frm!txtAnswer.Value = m_sChatHtml
+    ScrollAnswerToEnd frm
 
     ' curl.exe 从 Windows 10 1803 开始内置
     If Dir(Environ$("SystemRoot") & "\System32\curl.exe") <> "" Then
-        StreamWithCurl frm, sQuestion, sUrl, sKey, sModel
+        StreamWithCurl frm, sQuestion, sUrl, sKey, sModel, sSystemPrompt
     Else
-        SyncWithTypewriter frm, sQuestion, sUrl, sKey, sModel
+        SyncWithTypewriter frm, sQuestion, sUrl, sKey, sModel, sSystemPrompt
     End If
 
     ' 添加助手回复到历史
@@ -679,6 +1249,13 @@ Public Sub Askai()
         oAsstMsg.Add "role", "assistant"
         oAsstMsg.Add "content", m_sLastAnswer
         m_colHistory.Add oAsstMsg
+        m_sStreamingAnswer = ""
+
+        ' AI 回复写回历史后重新渲染整段对话, 保证第一轮及后续内容不丢
+        RebuildChatHtmlFromHistory
+        frm!txtAnswer.TextFormat = acTextFormatHTMLRichText
+        frm!txtAnswer.Value = m_sChatHtml
+        ScrollAnswerToEnd frm
     End If
 
     ' 保存到数据库
@@ -689,7 +1266,7 @@ Public Sub Askai()
         SaveMessageToDb m_sSessionId, sProviderSave, "assistant", m_sLastAnswer
     End If
 
-    ' 清空输入框
+    ' 清空输入框。焦点保留在 txtAnswer, 让鼠标滚轮可以直接滚动回答区。
     frm!txtQ.Value = ""
 
     ' 更新状态显示对话轮数
@@ -717,7 +1294,7 @@ End Sub
 '====================================================
 Private Sub StreamWithCurl(frm As Form, ByVal sQuestion As String, _
                            ByVal sUrl As String, ByVal sKey As String, _
-                           ByVal sModel As String)
+                           ByVal sModel As String, ByVal sSystemPrompt As String)
     On Error GoTo ErrHandler
 
     ' --- 准备临时文件 ---
@@ -735,7 +1312,7 @@ Private Sub StreamWithCurl(frm As Form, ByVal sQuestion As String, _
 
     ' 构建请求体 (stream=true)
     Dim sBody As String
-    sBody = BuildRequestBody(sQuestion, sModel, True, m_colHistory)
+    sBody = BuildRequestBody(sQuestion, sModel, True, m_colHistory, sSystemPrompt)
 
     ' 写入请求体文件 (UTF-8 无 BOM)
     WriteUTF8NoBom sTmpBody, sBody
@@ -765,9 +1342,10 @@ Private Sub StreamWithCurl(frm As Form, ByVal sQuestion As String, _
     ' --- UI 初始化 ---
     DoCmd.Hourglass True
     frm!lblMsg.Caption = "AI 正在思考..."
-    frm!txtAnswer.TextFormat = acTextFormatPlain
-    frm!txtAnswer.Value = ""
+    frm!txtAnswer.TextFormat = acTextFormatHTMLRichText
+    frm!txtAnswer.Value = m_sChatHtml & BuildAiStreamingBubbleHtml("", True)
     frm.Repaint
+    ScrollAnswerToEnd frm
 
     ' --- 轮询响应文件 ---
     Dim sFullText As String     ' 累积的完整回答
@@ -818,9 +1396,11 @@ Private Sub StreamWithCurl(frm As Form, ByVal sQuestion As String, _
                     frm!lblMsg.Caption = "正在输出..."
                 End If
 
-                ' 更新显示
-                frm!txtAnswer.Value = sFullText & sCursor
+                ' 更新显示 (流式气泡 + 光标)
+                m_sStreamingAnswer = sFullText
+                frm!txtAnswer.Value = m_sChatHtml & BuildAiStreamingBubbleHtml(sFullText, True)
                 frm.Repaint
+                ScrollAnswerToEnd frm
                 sngLastUI = Timer
             End If
         End If
@@ -848,14 +1428,19 @@ Private Sub StreamWithCurl(frm As Form, ByVal sQuestion As String, _
     ' --- 最终显示: Markdown 富文本 ---
     DoCmd.Hourglass False
     m_sLastAnswer = sFullText
+    m_sStreamingAnswer = sFullText
     If Len(sFullText) > 0 Then
+        ' 将本轮 AI 气泡固化到会话 HTML
+        m_sChatHtml = m_sChatHtml & BuildAiBubbleHtml(sFullText)
         frm!txtAnswer.TextFormat = acTextFormatHTMLRichText
-        frm!txtAnswer.Value = MarkdownToRichText(sFullText)
+        frm!txtAnswer.Value = m_sChatHtml
         frm!lblMsg.Caption = "回答完成。 (共 " & Len(sFullText) & " 字符)"
+        ScrollAnswerToEnd frm
     Else
-        ' 可能是错误响应
+        ' 可能是错误响应: 回退成纯文本显示错误, 不影响会话 HTML
         sAll = ReadFileAsUTF8(sTmpResp)
         sErr = ReadFileAsUTF8(sTmpErr)
+        frm!txtAnswer.TextFormat = acTextFormatPlain
         If Len(sErr) > 0 Then
             frm!txtAnswer.Value = "curl 错误:" & vbCrLf & Left$(sErr, 1500)
             frm!lblMsg.Caption = "curl 执行失败。"
@@ -896,17 +1481,18 @@ End Sub
 '====================================================
 Private Sub SyncWithTypewriter(frm As Form, ByVal sQuestion As String, _
                                ByVal sUrl As String, ByVal sKey As String, _
-                               ByVal sModel As String)
+                               ByVal sModel As String, ByVal sSystemPrompt As String)
     On Error GoTo ErrHandler
 
     Dim sBody As String
-    sBody = BuildRequestBody(sQuestion, sModel, False, m_colHistory)
+    sBody = BuildRequestBody(sQuestion, sModel, False, m_colHistory, sSystemPrompt)
 
     DoCmd.Hourglass True
     frm!lblMsg.Caption = "AI 正在思考..."
-    frm!txtAnswer.TextFormat = acTextFormatPlain
-    frm!txtAnswer.Value = ""
+    frm!txtAnswer.TextFormat = acTextFormatHTMLRichText
+    frm!txtAnswer.Value = m_sChatHtml & BuildAiStreamingBubbleHtml("", True)
     frm.Repaint
+    ScrollAnswerToEnd frm
 
     Dim xmlHttp As Object
     Set xmlHttp = CreateObject("MSXML2.ServerXMLHTTP.6.0")
@@ -939,9 +1525,12 @@ Private Sub SyncWithTypewriter(frm As Form, ByVal sQuestion As String, _
     frm!lblMsg.Caption = "正在输出..."
     TypewriterShow frm, sAnswer
 
+    ' 固化本轮 AI 气泡
+    m_sChatHtml = m_sChatHtml & BuildAiBubbleHtml(sAnswer)
     frm!txtAnswer.TextFormat = acTextFormatHTMLRichText
-    frm!txtAnswer.Value = MarkdownToRichText(sAnswer)
+    frm!txtAnswer.Value = m_sChatHtml
     frm!lblMsg.Caption = "回答完成。 (共 " & Len(sAnswer) & " 字符)"
+    ScrollAnswerToEnd frm
 
 ExitHere:
     DoCmd.Hourglass False
@@ -965,9 +1554,7 @@ Private Sub TypewriterShow(frm As Form, ByVal sText As String)
     Dim lPos As Long
     Dim lStep As Long
     Dim lDelay As Long
-    Dim sCursor As String
 
-    sCursor = ChrW$(&H258C)
     lTotal = Len(sText)
     If lTotal = 0 Then Exit Sub
 
@@ -981,16 +1568,19 @@ Private Sub TypewriterShow(frm As Form, ByVal sText As String)
         lStep = 15: lDelay = 10
     End If
 
-    frm!txtAnswer.TextFormat = acTextFormatPlain
+    frm!txtAnswer.TextFormat = acTextFormatHTMLRichText
 
     For lPos = lStep To lTotal Step lStep
-        frm!txtAnswer.Value = Left$(sText, lPos) & sCursor
+        m_sStreamingAnswer = Left$(sText, lPos)
+        frm!txtAnswer.Value = m_sChatHtml & BuildAiStreamingBubbleHtml(Left$(sText, lPos), True)
         frm.Repaint
+        ScrollAnswerToEnd frm
         DoEvents
         Sleep lDelay
     Next lPos
 
-    frm!txtAnswer.Value = sText
+    m_sStreamingAnswer = sText
+    frm!txtAnswer.Value = m_sChatHtml & BuildAiStreamingBubbleHtml(sText, False)
     frm.Repaint
 End Sub
 
@@ -1054,18 +1644,28 @@ End Function
 Private Function BuildRequestBody(ByVal sQuestion As String, _
                                   ByVal sModel As String, _
                                   Optional ByVal bStream As Boolean = False, _
-                                  Optional ByVal colHist As Collection = Nothing) As String
+                                  Optional ByVal colHist As Collection = Nothing, _
+                                  Optional ByVal sSystemPrompt As String = "") As String
     Dim oRoot As Object
     Dim colMessages As Collection
+    Dim oMsg As Object
+    Dim vHistMsg As Variant
 
     Set oRoot = CreateObject("Scripting.Dictionary")
+    Set colMessages = New Collection
 
-    ' 使用对话历史 (如果有)，否则仅发送当前问题
+    If Len(Trim$(sSystemPrompt)) > 0 Then
+        Set oMsg = CreateObject("Scripting.Dictionary")
+        oMsg.Add "role", "system"
+        oMsg.Add "content", Trim$(sSystemPrompt)
+        colMessages.Add oMsg
+    End If
+
     If Not colHist Is Nothing Then
-        Set colMessages = colHist
+        For Each vHistMsg In colHist
+            colMessages.Add vHistMsg
+        Next vHistMsg
     Else
-        Dim oMsg As Object
-        Set colMessages = New Collection
         Set oMsg = CreateObject("Scripting.Dictionary")
         oMsg.Add "role", "user"
         oMsg.Add "content", sQuestion
@@ -1377,10 +1977,79 @@ Public Sub CreateAIForm()
     ctl.SpecialEffect = 0
     ctl.Visible = False
 
+    ' ========== 系统提示词配置 ==========
+
+    Set ctl = CreateControl(frm.Name, acRectangle, acDetail, , , 250, 1130, 13900, 420)
+    ctl.Name = "rectSystemPromptBg"
+    ctl.BackColor = cSurface
+    ctl.BackStyle = 1
+    ctl.BorderColor = cBorder
+    ctl.BorderStyle = 1
+    ctl.SpecialEffect = 0
+
+    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 400, 1170, 1050, 300)
+    ctl.Name = "lblSystemPrompt"
+    ctl.Caption = "系统提示词"
+    ctl.FontName = "Microsoft YaHei"
+    ctl.FontSize = 8
+    ctl.ForeColor = cSubText
+    ctl.BackStyle = 0
+
+    Set ctl = CreateControl(frm.Name, acTextBox, acDetail, , , 1500, 1160, 12500, 340)
+    ctl.Name = "txtSystemPrompt"
+    ctl.FontName = "Microsoft YaHei"
+    ctl.FontSize = 9
+    ctl.BackColor = cBg
+    ctl.ForeColor = cText
+    ctl.BorderColor = cBorder
+    ctl.BorderStyle = 1
+    ctl.SpecialEffect = 0
+    ctl.DefaultValue = """" & Replace(GetSavedSystemPrompt(), """", """""") & """"
+    ctl.AfterUpdate = "=txtSystemPrompt_AfterUpdate()"
+
+    ' ========== 当前数据库表/查询分析 ==========
+
+    Set ctl = CreateControl(frm.Name, acRectangle, acDetail, , , 250, 1580, 13900, 420)
+    ctl.Name = "rectDbObjectBg"
+    ctl.BackColor = cSurface
+    ctl.BackStyle = 1
+    ctl.BorderColor = cBorder
+    ctl.BorderStyle = 1
+    ctl.SpecialEffect = 0
+
+    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 400, 1620, 900, 300)
+    ctl.Name = "lblDbObject"
+    ctl.Caption = "数据对象"
+    ctl.FontName = "Microsoft YaHei"
+    ctl.FontSize = 8
+    ctl.ForeColor = cSubText
+    ctl.BackStyle = 0
+
+    Set ctl = CreateControl(frm.Name, acComboBox, acDetail, , , 1300, 1610, 6600, 340)
+    ctl.Name = "cboDbObject"
+    ctl.FontName = "Microsoft YaHei"
+    ctl.FontSize = 9
+    ctl.RowSourceType = "Value List"
+    ctl.RowSource = GetDbObjectRowSource()
+    ctl.LimitToList = True
+    ctl.BackColor = cBg
+    ctl.ForeColor = cText
+    ctl.BorderColor = cBorder
+    ctl.OnGotFocus = "=cboDbObject_GotFocus()"
+
+    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 8200, 1610, 2200, 340)
+    ctl.Name = "btnAnalyzeData"
+    ctl.Caption = "分析数据"
+    ctl.FontName = "Microsoft YaHei"
+    ctl.FontSize = 9
+    ctl.ForeColor = cAccentText
+    ctl.BackColor = cAccent
+    ctl.OnClick = "=btnAnalyzeData_Click()"
+
     ' ========== 核心区域 ==========
 
     ' --- txtAnswer: 回答区 (大面积白底, 极简边框) ---
-    Set ctl = CreateControl(frm.Name, acTextBox, acDetail, , , 500, 1180, 13400, 7600)
+    Set ctl = CreateControl(frm.Name, acTextBox, acDetail, , , 500, 2080, 13400, 6360)
     ctl.Name = "txtAnswer"
     ctl.FontName = "Microsoft YaHei"
     ctl.FontSize = 11
@@ -1389,12 +2058,13 @@ Public Sub CreateAIForm()
     ctl.BorderStyle = 1
     ctl.BorderColor = cToolBorder
     ctl.SpecialEffect = 0
-    ctl.Locked = True
-    ctl.TabStop = False
+    ctl.Enabled = True
+    ctl.Locked = False
+    ctl.TabStop = True
     ctl.EnterKeyBehavior = True
 
     ' --- lblMsg: 状态标签 ---
-    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 500, 8850, 13400, 280)
+    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 500, 8500, 13400, 280)
     ctl.Name = "lblMsg"
     ctl.Caption = "选择模型，输入问题后点击发送"
     ctl.FontName = "Microsoft YaHei"
@@ -1403,14 +2073,14 @@ Public Sub CreateAIForm()
     ctl.BackStyle = 0
 
     ' --- 输入区: 圆角感容器 ---
-    Set ctl = CreateControl(frm.Name, acRectangle, acDetail, , , 400, 9200, 13600, 1500)
+    Set ctl = CreateControl(frm.Name, acRectangle, acDetail, , , 400, 8850, 13600, 1500)
     ctl.BackColor = cSurface
     ctl.BorderColor = cBorder
     ctl.BackStyle = 1
     ctl.SpecialEffect = 0
 
     ' --- txtQ: 问题输入框 ---
-    Set ctl = CreateControl(frm.Name, acTextBox, acDetail, , , 550, 9350, 10800, 1200)
+    Set ctl = CreateControl(frm.Name, acTextBox, acDetail, , , 550, 9000, 10800, 1200)
     ctl.Name = "txtQ"
     ctl.FontName = "Microsoft YaHei"
     ctl.FontSize = 11
@@ -1421,7 +2091,7 @@ Public Sub CreateAIForm()
     ctl.SpecialEffect = 0
 
     ' --- btnAsk: 发送按钮 (品牌色胶囊) ---
-    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 11600, 9400, 2200, 1100)
+    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 11600, 9050, 2200, 1100)
     ctl.Name = "btnAsk"
     ctl.Caption = ChrW(&H27A4) & " 发送"
     ctl.FontName = "Microsoft YaHei"
@@ -1455,6 +2125,134 @@ Public Sub CreateAIForm()
 
 Err_Create:
     MsgBox "CreateAIForm: " & Err.Description, vbExclamation
+End Sub
+
+'====================================================
+' 方案A: 创建 WebBrowser HTML 对话窗体 frmAIWeb
+'====================================================
+Public Sub CreateAIWebForm()
+    On Error GoTo Err_Create
+    Dim frm As Form
+    Dim ctl As Control
+    Dim sTmp As String
+
+    If FormExists(AI_WEB_FORM) Then
+        DoCmd.Close acForm, AI_WEB_FORM, acSaveNo
+        DoCmd.DeleteObject acForm, AI_WEB_FORM
+    End If
+
+    Set frm = CreateForm
+    With frm
+        .Caption = "AccessAI - Web 对话模式"
+        .DefaultView = 0
+        .ScrollBars = 0
+        .RecordSelectors = False
+        .NavigationButtons = False
+        .DividingLines = False
+        .AutoCenter = True
+        .Width = 14400
+        .Section(acDetail).Height = 11200
+        .Section(acDetail).BackColor = RGB(255, 255, 255)
+    End With
+
+    CreateSharedChatControls frm
+
+    If Not TryCreateWebBrowserControl(frm, ctl) Then
+        sTmp = frm.Name
+        DoCmd.Close acForm, sTmp, acSaveNo
+        DoCmd.DeleteObject acForm, sTmp
+        MsgBox "无法自动创建 Microsoft Web Browser ActiveX 控件。" & vbCrLf & vbCrLf & _
+               "请确认 Access 已启用 ActiveX 控件，并且系统中已注册 Microsoft Web Browser 控件。", vbExclamation
+        Exit Sub
+    End If
+
+    Set ctl = CreateControl(frm.Name, acTextBox, acDetail, , , 100, 10600, 300, 300)
+    ctl.Name = "txtAnswer"
+    ctl.Visible = False
+
+    sTmp = frm.Name
+    DoCmd.Close acForm, sTmp, acSaveYes
+    Set frm = Nothing
+
+    DoCmd.OpenForm sTmp, acDesign
+    Forms(sTmp).Controls("txtAnswer").TextFormat = acTextFormatHTMLRichText
+    DoCmd.Close acForm, sTmp, acSaveYes
+
+    If sTmp <> AI_WEB_FORM Then DoCmd.Rename AI_WEB_FORM, acForm, sTmp
+    EnsureHistoryTable
+    MsgBox "窗体 [" & AI_WEB_FORM & "] 创建成功!", vbInformation
+    Exit Sub
+
+Err_Create:
+    MsgBox "CreateAIWebForm: " & Err.Description, vbExclamation
+End Sub
+
+Private Sub CreateSharedChatControls(frm As Form)
+    Dim ctl As Control
+    Dim cBg As Long, cSurface As Long, cBorder As Long, cText As Long, cSubText As Long, cAccent As Long, cAccentText As Long
+    cBg = RGB(255, 255, 255)
+    cSurface = RGB(247, 248, 250)
+    cBorder = RGB(228, 231, 236)
+    cText = RGB(29, 30, 32)
+    cSubText = RGB(134, 142, 153)
+    cAccent = RGB(78, 108, 254)
+    cAccentText = RGB(255, 255, 255)
+
+    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 340, 130, 2500, 360)
+    ctl.Caption = ChrW(&H2726) & " AccessAI Web"
+    ctl.FontName = "Microsoft YaHei": ctl.FontSize = 13: ctl.FontBold = True: ctl.ForeColor = cAccent: ctl.BackStyle = 0
+
+    Set ctl = CreateControl(frm.Name, acComboBox, acDetail, , , 2800, 130, 2800, 360)
+    ctl.Name = "cboProvider": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 10
+    ctl.RowSourceType = "Value List": ctl.RowSource = """DeepSeek"";""通义千问"";""文心一言"";""Kimi"";""自定义"""
+    ctl.DefaultValue = """DeepSeek""": ctl.LimitToList = True: ctl.BackColor = cSurface: ctl.ForeColor = cText: ctl.BorderColor = cBorder
+    ctl.AfterUpdate = "=cboProvider_AfterUpdate()"
+
+    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 6000, 130, 2200, 360)
+    ctl.Name = "btnNewChat": ctl.Caption = ChrW(&H2795) & " 新对话": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 9: ctl.BackColor = cSurface
+    ctl.OnClick = "=btnNewChat_Click()"
+
+    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 8400, 130, 2400, 360)
+    ctl.Name = "btnHistory": ctl.Caption = " 历史记录": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 9: ctl.ForeColor = cSubText: ctl.BackColor = cBg
+    ctl.OnClick = "=btnHistory_Click()"
+
+    Set ctl = CreateControl(frm.Name, acRectangle, acDetail, , , 250, 680, 13900, 420)
+    ctl.Name = "rectCustomBg": ctl.BackColor = cSurface: ctl.BackStyle = 1: ctl.BorderColor = cBorder: ctl.BorderStyle = 1: ctl.Visible = False
+    Set ctl = CreateControl(frm.Name, acTextBox, acDetail, , , 900, 710, 3800, 340)
+    ctl.Name = "txtCustomUrl": ctl.Visible = False
+    Set ctl = CreateControl(frm.Name, acTextBox, acDetail, , , 5400, 710, 3200, 340)
+    ctl.Name = "txtCustomKey": ctl.Visible = False
+    Set ctl = CreateControl(frm.Name, acTextBox, acDetail, , , 9500, 710, 4500, 340)
+    ctl.Name = "txtCustomModel": ctl.Visible = False
+    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 400, 720, 500, 300)
+    ctl.Name = "lblCustomUrl": ctl.Caption = "URL": ctl.Visible = False
+    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 4900, 720, 450, 300)
+    ctl.Name = "lblCustomKey": ctl.Caption = "Key": ctl.Visible = False
+    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 8850, 720, 600, 300)
+    ctl.Name = "lblCustomModel": ctl.Caption = "模型": ctl.Visible = False
+
+    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 400, 1170, 1050, 300)
+    ctl.Name = "lblSystemPrompt": ctl.Caption = "系统提示词": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 8: ctl.ForeColor = cSubText: ctl.BackStyle = 0
+    Set ctl = CreateControl(frm.Name, acTextBox, acDetail, , , 1500, 1160, 12500, 340)
+    ctl.Name = "txtSystemPrompt": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 9: ctl.BackColor = cBg: ctl.BorderColor = cBorder: ctl.BorderStyle = 1
+    ctl.DefaultValue = """" & Replace(GetSavedSystemPrompt(), """", """""") & """": ctl.AfterUpdate = "=txtSystemPrompt_AfterUpdate()"
+
+    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 400, 1620, 900, 300)
+    ctl.Name = "lblDbObject": ctl.Caption = "数据对象": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 8: ctl.ForeColor = cSubText: ctl.BackStyle = 0
+    Set ctl = CreateControl(frm.Name, acComboBox, acDetail, , , 1300, 1610, 6600, 340)
+    ctl.Name = "cboDbObject": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 9: ctl.RowSourceType = "Value List": ctl.RowSource = GetDbObjectRowSource(): ctl.LimitToList = True
+    ctl.OnGotFocus = "=cboDbObject_GotFocus()"
+    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 8200, 1610, 2200, 340)
+    ctl.Name = "btnAnalyzeData": ctl.Caption = "分析数据": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 9: ctl.ForeColor = cAccentText: ctl.BackColor = cAccent
+    ctl.OnClick = "=btnAnalyzeData_Click()"
+
+    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 500, 8500, 13400, 280)
+    ctl.Name = "lblMsg": ctl.Caption = "选择模型，输入问题后点击发送": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 8: ctl.ForeColor = cSubText: ctl.BackStyle = 0
+    Set ctl = CreateControl(frm.Name, acTextBox, acDetail, , , 550, 9000, 10800, 1200)
+    ctl.Name = "txtQ": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 11: ctl.ScrollBars = 2: ctl.EnterKeyBehavior = True: ctl.BackColor = cSurface: ctl.BorderStyle = 0
+    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 11600, 9050, 2200, 1100)
+    ctl.Name = "btnAsk": ctl.Caption = ChrW(&H27A4) & " 发送": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 11: ctl.FontBold = True: ctl.ForeColor = cAccentText: ctl.BackColor = cAccent
+    ctl.OnClick = "=btnAsk_Click()"
 End Sub
 
 '====================================================
