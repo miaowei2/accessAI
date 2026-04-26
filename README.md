@@ -22,7 +22,7 @@
 
 ## ✨ 功能特性
 
-- **多模型支持** — 内置 DeepSeek、通义千问、文心一言、Kimi 四大 AI 模型，下拉框一键切换
+- **多模型支持** — 内置 DeepSeek Flash、DeepSeek Pro、通义千问、文心一言、Kimi 等 AI 模型，下拉框一键切换
 - **AI 对话问答** — 在 Access 窗体中直接向 AI 提问，获取智能回答
 - **对话历史记录** — 自动保持对话上下文，AI 能记住之前的对话内容，点击「新对话」重置
 - **历史对话持久化** — 对话记录自动保存至 Access 数据表 `tblChatHistory`，关闭数据库后仍可查阅
@@ -74,7 +74,8 @@
 ' DeepSeek
 Private Const DS_KEY   As String = "你的-DeepSeek-Key"
 Private Const DS_URL   As String = "https://api.deepseek.com/chat/completions"
-Private Const DS_MODEL As String = "deepseek-chat"
+Private Const DS_FLASH_MODEL As String = "deepseek-v4-flash"
+Private Const DS_PRO_MODEL   As String = "deepseek-v4-pro"
 
 ' 通义千问 (阿里云百炼)
 Private Const QW_KEY   As String = "你的-通义千问-Key"
@@ -168,7 +169,7 @@ SetTextBoxMarkdown Me.txtResult, sMarkdown
 
 ## 🗺️ 路线图
 
-- [x] DeepSeek 模型支持
+- [x] DeepSeek Flash / Pro 模型支持
 - [x] 通义千问模型支持
 - [x] 文心一言模型支持
 - [x] Kimi 模型支持
@@ -240,7 +241,7 @@ SetTextBoxMarkdown Me.txtResult, sMarkdown
 
 ## ✨ Features
 
-- **Multi-Model Support** — Built-in support for DeepSeek, Alibaba Qwen, Baidu ERNIE, and Kimi — switch models via dropdown
+- **Multi-Model Support** — Built-in support for DeepSeek Flash, DeepSeek Pro, Alibaba Qwen, Baidu ERNIE, and Kimi — switch models via dropdown
 - **AI Q&A Chat** — Ask AI questions directly from an Access form and get intelligent answers
 - **Conversation History** — Automatically maintains conversation context so the AI remembers previous exchanges; click "New Chat" to reset
 - **Persistent History Storage** — Conversations are automatically saved to an Access table `tblChatHistory` and persist across sessions
@@ -292,7 +293,8 @@ Open the `Module_Markdown` module and update the API Keys for the models you wan
 ' DeepSeek
 Private Const DS_KEY   As String = "your-DeepSeek-Key"
 Private Const DS_URL   As String = "https://api.deepseek.com/chat/completions"
-Private Const DS_MODEL As String = "deepseek-chat"
+Private Const DS_FLASH_MODEL As String = "deepseek-v4-flash"
+Private Const DS_PRO_MODEL   As String = "deepseek-v4-pro"
 
 ' Alibaba Qwen (通义千问)
 Private Const QW_KEY   As String = "your-Qwen-Key"
@@ -386,7 +388,7 @@ SetTextBoxMarkdown Me.txtResult, sMarkdown
 
 ## 🗺️ Roadmap
 
-- [x] DeepSeek model support
+- [x] DeepSeek Flash / Pro model support
 - [x] Alibaba Qwen model support
 - [x] Baidu ERNIE model support
 - [x] Kimi model support

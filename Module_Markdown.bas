@@ -8,7 +8,7 @@ Option Explicit
 '   3. 修改各 AI 提供商的 API Key
 '
 ' 支持的 AI 模型:
-'   DeepSeek / 通义千问 / 文心一言 / Kimi
+'   DeepSeek Flash / DeepSeek Pro / 通义千问 / 文心一言 / Kimi
 '
 ' 快速开始:
 '   在 VBA 立即窗口执行:
@@ -43,7 +43,8 @@ Private Const SB_BOTTOM As Long = 7
 ' DeepSeek
 Private Const DS_KEY   As String = "sk-XXXXXXXXXXXXXXXXXXXX"
 Private Const DS_URL   As String = "https://api.deepseek.com/chat/completions"
-Private Const DS_MODEL As String = "deepseek-v4-pro"
+Private Const DS_FLASH_MODEL As String = "deepseek-v4-flash"
+Private Const DS_PRO_MODEL   As String = "deepseek-v4-pro"
 
 ' 通义千问 (阿里云百炼)
 Private Const QW_KEY   As String = "sk-XXXXXXXXXXXXXXXXXXXX"
@@ -264,7 +265,7 @@ End Function
 '############################################################
 '#                                                          #
 '#   第二部分: AI API 调用 (多模型支持)                      #
-'#   支持: DeepSeek / 通义千问 / 文心一言 / Kimi             #
+'#   支持: DeepSeek Flash / DeepSeek Pro / 通义千问 / 文心一言 / Kimi #
 '#   方案A: curl 子进程真流式 (Windows 10 1803+)            #
 '#   方案B: 同步请求 + 打字机效果 (兜底)                     #
 '#                                                          #
@@ -278,6 +279,10 @@ Private Sub GetProviderConfig(ByVal sProvider As String, _
                               ByRef sKey As String, _
                               ByRef sModel As String)
     Select Case sProvider
+        Case "DeepSeek Flash"
+            sUrl = DS_URL: sKey = DS_KEY: sModel = DS_FLASH_MODEL
+        Case "DeepSeek Pro", "DeepSeek"
+            sUrl = DS_URL: sKey = DS_KEY: sModel = DS_PRO_MODEL
         Case "通义千问"
             sUrl = QW_URL: sKey = QW_KEY: sModel = QW_MODEL
         Case "文心一言"
@@ -290,8 +295,8 @@ Private Sub GetProviderConfig(ByVal sProvider As String, _
             sUrl = Nz(frmC!txtCustomUrl, "")
             sKey = Nz(frmC!txtCustomKey, "")
             sModel = Nz(frmC!txtCustomModel, "")
-        Case Else  ' DeepSeek (默认)
-            sUrl = DS_URL: sKey = DS_KEY: sModel = DS_MODEL
+        Case Else  ' DeepSeek Pro (默认)
+            sUrl = DS_URL: sKey = DS_KEY: sModel = DS_PRO_MODEL
     End Select
 End Sub
 
@@ -1198,7 +1203,7 @@ Public Sub Askai()
     ' 获取选择的 AI 提供商
     Dim sProvider As String
     On Error Resume Next
-    sProvider = Nz(frm!cboProvider, "DeepSeek")
+    sProvider = Nz(frm!cboProvider, "DeepSeek Pro")
     On Error GoTo 0
 
     Dim sUrl As String, sKey As String, sModel As String
@@ -1261,7 +1266,7 @@ Public Sub Askai()
     ' 保存到数据库
     If Len(m_sLastAnswer) > 0 Then
         Dim sProviderSave As String
-        sProviderSave = Nz(frm!cboProvider, "DeepSeek")
+        sProviderSave = Nz(frm!cboProvider, "DeepSeek Pro")
         SaveMessageToDb m_sSessionId, sProviderSave, "user", sQuestion
         SaveMessageToDb m_sSessionId, sProviderSave, "assistant", m_sLastAnswer
     End If
@@ -1880,8 +1885,8 @@ Public Sub CreateAIForm()
     ctl.FontName = "Microsoft YaHei"
     ctl.FontSize = 10
     ctl.RowSourceType = "Value List"
-    ctl.RowSource = """DeepSeek"";""通义千问"";""文心一言"";""Kimi"";""自定义"""
-    ctl.DefaultValue = """DeepSeek"""
+    ctl.RowSource = """DeepSeek Flash"";""DeepSeek Pro"";""通义千问"";""文心一言"";""Kimi"";""自定义"""
+    ctl.DefaultValue = """DeepSeek Pro"""
     ctl.LimitToList = True
     ctl.BackColor = cSurface
     ctl.ForeColor = cText
@@ -2204,8 +2209,8 @@ Private Sub CreateSharedChatControls(frm As Form)
 
     Set ctl = CreateControl(frm.Name, acComboBox, acDetail, , , 2800, 130, 2800, 360)
     ctl.Name = "cboProvider": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 10
-    ctl.RowSourceType = "Value List": ctl.RowSource = """DeepSeek"";""通义千问"";""文心一言"";""Kimi"";""自定义"""
-    ctl.DefaultValue = """DeepSeek""": ctl.LimitToList = True: ctl.BackColor = cSurface: ctl.ForeColor = cText: ctl.BorderColor = cBorder
+    ctl.RowSourceType = "Value List": ctl.RowSource = """DeepSeek Flash"";""DeepSeek Pro"";""通义千问"";""文心一言"";""Kimi"";""自定义"""
+    ctl.DefaultValue = """DeepSeek Pro""": ctl.LimitToList = True: ctl.BackColor = cSurface: ctl.ForeColor = cText: ctl.BorderColor = cBorder
     ctl.AfterUpdate = "=cboProvider_AfterUpdate()"
 
     Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 6000, 130, 2200, 360)
