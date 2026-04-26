@@ -114,6 +114,8 @@ CreateAIForm
 CreateAIWebForm
 ```
 
+> 注意：`CreateAIWebForm` 会尝试自动创建 `Microsoft Web Browser` ActiveX 控件。部分 Access/Windows 环境可能无法通过 VBA 自动生成该控件，如窗体中未出现 WebBrowser 区域，请在 `frmAIWeb` 设计视图中手工添加 **Microsoft Web Browser** ActiveX 控件，并将控件名称改为 `wbChat`。
+
 ## 📁 项目结构
 
 ```
@@ -329,6 +331,8 @@ CreateAIForm
 ' Plan A: WebBrowser HTML bubble chat mode
 CreateAIWebForm
 ```
+
+> Note: `CreateAIWebForm` attempts to create the `Microsoft Web Browser` ActiveX control automatically. Some Access/Windows environments may not allow VBA to create this control. If the WebBrowser area is missing, open `frmAIWeb` in Design View, manually add the **Microsoft Web Browser** ActiveX control, and rename the control to `wbChat`.
 
 ## 📁 Project Structure
 
