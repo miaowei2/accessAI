@@ -8,7 +8,7 @@ Option Explicit
 '   3. 修改各 AI 提供商的 API Key
 '
 ' 支持的 AI 模型:
-'   DeepSeek Flash / DeepSeek Pro / 通义千问 / 文心一言 / Kimi
+'   DeepSeek / OpenAI / 通义千问 / 文心一言 / Kimi / GLM / Gemini / 豆包 / 腾讯混元 / 讯飞星火 / 自定义
 '
 ' 快速开始:
 '   在 VBA 立即窗口执行:
@@ -60,6 +60,39 @@ Private Const WX_MODEL As String = "ernie-4.0-8k"
 Private Const KM_KEY   As String = "sk-XXXXXXXXXXXXXXXXXXXX"
 Private Const KM_URL   As String = "https://api.moonshot.cn/v1/chat/completions"
 Private Const KM_MODEL As String = "moonshot-v1-8k"
+
+' OpenAI
+Private Const OA_KEY   As String = "sk-XXXXXXXXXXXXXXXXXXXX"
+Private Const OA_URL   As String = "https://api.openai.com/v1/chat/completions"
+Private Const OA_GPT55_MODEL As String = "gpt-5.5"
+Private Const OA_GPT54_MODEL As String = "gpt-5.4"
+
+' 智谱清言 GLM (BigModel)
+Private Const GLM_KEY  As String = "sk-XXXXXXXXXXXXXXXXXXXX"
+Private Const GLM_URL  As String = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
+Private Const GLM_FLASH_MODEL As String = "glm-4-flash"
+Private Const GLM_PLUS_MODEL  As String = "glm-4-plus"
+
+' Gemini (OpenAI 兼容接口)
+Private Const GM_KEY   As String = "sk-XXXXXXXXXXXXXXXXXXXX"
+Private Const GM_URL   As String = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+Private Const GM_FLASH_MODEL As String = "gemini-1.5-flash"
+Private Const GM_PRO_MODEL   As String = "gemini-1.5-pro"
+
+' 豆包 (OpenAI 兼容接口)
+Private Const DB_KEY   As String = "sk-XXXXXXXXXXXXXXXXXXXX"
+Private Const DB_URL   As String = "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
+Private Const DB_MODEL As String = "doubao-pro-32k"
+
+' 腾讯混元 (OpenAI 兼容接口)
+Private Const HY_KEY   As String = "sk-XXXXXXXXXXXXXXXXXXXX"
+Private Const HY_URL   As String = "https://api.hunyuan.cloud.tencent.com/v1/chat/completions"
+Private Const HY_MODEL As String = "hunyuan-turbos-latest"
+
+' 讯飞星火 (OpenAI 兼容接口)
+Private Const XF_KEY   As String = "sk-XXXXXXXXXXXXXXXXXXXX"
+Private Const XF_URL   As String = "https://spark-api-open.xf-yun.com/v1/chat/completions"
+Private Const XF_MODEL As String = "generalv3.5"
 
 Private Const AI_FORM   As String = "frmAI"
 Private Const AI_WEB_FORM As String = "frmAIWeb"
@@ -265,7 +298,7 @@ End Function
 '############################################################
 '#                                                          #
 '#   第二部分: AI API 调用 (多模型支持)                      #
-'#   支持: DeepSeek Flash / DeepSeek Pro / 通义千问 / 文心一言 / Kimi #
+'#   支持: DeepSeek/OpenAI/通义千问/文心一言/Kimi/GLM/Gemini/豆包等 OpenAI 兼容接口 #
 '#   方案A: curl 子进程真流式 (Windows 10 1803+)            #
 '#   方案B: 同步请求 + 打字机效果 (兜底)                     #
 '#                                                          #
@@ -274,6 +307,28 @@ End Function
 '====================================================
 ' 根据提供商名称返回 API 配置
 '====================================================
+Private Function GetProviderRowSource() As String
+    Dim vProviders As Variant
+    Dim i As Long
+    Dim sRows As String
+
+    vProviders = Array( _
+        "DeepSeek Flash", "DeepSeek Pro", _
+        "通义千问 Plus", "通义千问", _
+        "文心一言", "Kimi", _
+        "OpenAI GPT-5.5", "OpenAI GPT-5.4", _
+        "GLM Flash", "GLM Plus", _
+        "Gemini Flash", "Gemini Pro", _
+        "豆包", "腾讯混元", "讯飞星火", _
+        "自定义")
+
+    For i = LBound(vProviders) To UBound(vProviders)
+        If Len(sRows) > 0 Then sRows = sRows & ";"
+        sRows = sRows & """" & CStr(vProviders(i)) & """"
+    Next i
+    GetProviderRowSource = sRows
+End Function
+
 Private Sub GetProviderConfig(ByVal sProvider As String, _
                               ByRef sUrl As String, _
                               ByRef sKey As String, _
@@ -283,12 +338,30 @@ Private Sub GetProviderConfig(ByVal sProvider As String, _
             sUrl = DS_URL: sKey = DS_KEY: sModel = DS_FLASH_MODEL
         Case "DeepSeek Pro", "DeepSeek"
             sUrl = DS_URL: sKey = DS_KEY: sModel = DS_PRO_MODEL
-        Case "通义千问"
+        Case "通义千问", "通义千问 Plus"
             sUrl = QW_URL: sKey = QW_KEY: sModel = QW_MODEL
         Case "文心一言"
             sUrl = WX_URL: sKey = WX_KEY: sModel = WX_MODEL
         Case "Kimi"
             sUrl = KM_URL: sKey = KM_KEY: sModel = KM_MODEL
+        Case "OpenAI GPT-5.5"
+            sUrl = OA_URL: sKey = OA_KEY: sModel = OA_GPT55_MODEL
+        Case "OpenAI GPT-5.4"
+            sUrl = OA_URL: sKey = OA_KEY: sModel = OA_GPT54_MODEL
+        Case "GLM Flash"
+            sUrl = GLM_URL: sKey = GLM_KEY: sModel = GLM_FLASH_MODEL
+        Case "GLM Plus"
+            sUrl = GLM_URL: sKey = GLM_KEY: sModel = GLM_PLUS_MODEL
+        Case "Gemini Flash"
+            sUrl = GM_URL: sKey = GM_KEY: sModel = GM_FLASH_MODEL
+        Case "Gemini Pro"
+            sUrl = GM_URL: sKey = GM_KEY: sModel = GM_PRO_MODEL
+        Case "豆包"
+            sUrl = DB_URL: sKey = DB_KEY: sModel = DB_MODEL
+        Case "腾讯混元"
+            sUrl = HY_URL: sKey = HY_KEY: sModel = HY_MODEL
+        Case "讯飞星火"
+            sUrl = XF_URL: sKey = XF_KEY: sModel = XF_MODEL
         Case "自定义"
             Dim frmC As Form
             Set frmC = Screen.ActiveForm
@@ -463,6 +536,30 @@ End Function
 Private Sub SaveSystemPrompt(ByVal sSystemPrompt As String)
     SaveSetting "AccessAI", "Settings", "SystemPrompt", sSystemPrompt
 End Sub
+
+Private Function GetReasoningEffortFromForm(frm As Form) As String
+    On Error Resume Next
+    GetReasoningEffortFromForm = Trim$(Nz(frm!cboReasoningEffort, ""))
+    If Err.Number = 0 Then SaveReasoningEffort GetReasoningEffortFromForm
+End Function
+
+Private Function GetSavedReasoningEffort() As String
+    GetSavedReasoningEffort = GetSetting("AccessAI", "Settings", "ReasoningEffort", "默认")
+End Function
+
+Private Sub SaveReasoningEffort(ByVal sReasoningEffort As String)
+    If Len(Trim$(sReasoningEffort)) = 0 Then sReasoningEffort = "默认"
+    SaveSetting "AccessAI", "Settings", "ReasoningEffort", sReasoningEffort
+End Sub
+
+Private Function NormalizeReasoningEffort(ByVal sReasoningEffort As String) As String
+    Select Case LCase$(Trim$(sReasoningEffort))
+        Case "low", "medium", "high", "xhigh"
+            NormalizeReasoningEffort = LCase$(Trim$(sReasoningEffort))
+        Case Else
+            NormalizeReasoningEffort = ""
+    End Select
+End Function
 
 '====================================================
 ' 方案A: WebBrowser HTML 对话窗口渲染
@@ -925,6 +1022,16 @@ Public Function txtSystemPrompt_AfterUpdate()
 End Function
 
 '====================================================
+' 思考强度变更事件: 保存配置
+'====================================================
+Public Function cboReasoningEffort_AfterUpdate()
+    On Error Resume Next
+    Dim frm As Form
+    Set frm = Screen.ActiveForm
+    SaveReasoningEffort Nz(frm!cboReasoningEffort, "默认")
+End Function
+
+'====================================================
 ' 数据对象下拉框获取焦点: 刷新表/查询列表
 '====================================================
 Public Function cboDbObject_GotFocus()
@@ -1220,6 +1327,9 @@ Public Sub Askai()
     Dim sSystemPrompt As String
     sSystemPrompt = GetSystemPromptFromForm(frm)
 
+    Dim sReasoningEffort As String
+    sReasoningEffort = GetReasoningEffortFromForm(frm)
+
     ' 初始化并添加用户消息到历史
     InitHistory
 
@@ -1242,9 +1352,9 @@ Public Sub Askai()
 
     ' curl.exe 从 Windows 10 1803 开始内置
     If Dir(Environ$("SystemRoot") & "\System32\curl.exe") <> "" Then
-        StreamWithCurl frm, sQuestion, sUrl, sKey, sModel, sSystemPrompt
+        StreamWithCurl frm, sQuestion, sUrl, sKey, sModel, sSystemPrompt, sReasoningEffort
     Else
-        SyncWithTypewriter frm, sQuestion, sUrl, sKey, sModel, sSystemPrompt
+        SyncWithTypewriter frm, sQuestion, sUrl, sKey, sModel, sSystemPrompt, sReasoningEffort
     End If
 
     ' 添加助手回复到历史
@@ -1299,7 +1409,8 @@ End Sub
 '====================================================
 Private Sub StreamWithCurl(frm As Form, ByVal sQuestion As String, _
                            ByVal sUrl As String, ByVal sKey As String, _
-                           ByVal sModel As String, ByVal sSystemPrompt As String)
+                           ByVal sModel As String, ByVal sSystemPrompt As String, _
+                           ByVal sReasoningEffort As String)
     On Error GoTo ErrHandler
 
     ' --- 准备临时文件 ---
@@ -1317,7 +1428,7 @@ Private Sub StreamWithCurl(frm As Form, ByVal sQuestion As String, _
 
     ' 构建请求体 (stream=true)
     Dim sBody As String
-    sBody = BuildRequestBody(sQuestion, sModel, True, m_colHistory, sSystemPrompt)
+    sBody = BuildRequestBody(sQuestion, sModel, True, m_colHistory, sSystemPrompt, sReasoningEffort)
 
     ' 写入请求体文件 (UTF-8 无 BOM)
     WriteUTF8NoBom sTmpBody, sBody
@@ -1486,11 +1597,12 @@ End Sub
 '====================================================
 Private Sub SyncWithTypewriter(frm As Form, ByVal sQuestion As String, _
                                ByVal sUrl As String, ByVal sKey As String, _
-                               ByVal sModel As String, ByVal sSystemPrompt As String)
+                               ByVal sModel As String, ByVal sSystemPrompt As String, _
+                               ByVal sReasoningEffort As String)
     On Error GoTo ErrHandler
 
     Dim sBody As String
-    sBody = BuildRequestBody(sQuestion, sModel, False, m_colHistory, sSystemPrompt)
+    sBody = BuildRequestBody(sQuestion, sModel, False, m_colHistory, sSystemPrompt, sReasoningEffort)
 
     DoCmd.Hourglass True
     frm!lblMsg.Caption = "AI 正在思考..."
@@ -1650,7 +1762,8 @@ Private Function BuildRequestBody(ByVal sQuestion As String, _
                                   ByVal sModel As String, _
                                   Optional ByVal bStream As Boolean = False, _
                                   Optional ByVal colHist As Collection = Nothing, _
-                                  Optional ByVal sSystemPrompt As String = "") As String
+                                  Optional ByVal sSystemPrompt As String = "", _
+                                  Optional ByVal sReasoningEffort As String = "") As String
     Dim oRoot As Object
     Dim colMessages As Collection
     Dim oMsg As Object
@@ -1681,6 +1794,8 @@ Private Function BuildRequestBody(ByVal sQuestion As String, _
     oRoot.Add "messages", colMessages
     oRoot.Add "temperature", 0.7
     oRoot.Add "max_tokens", 8192
+    sReasoningEffort = NormalizeReasoningEffort(sReasoningEffort)
+    If Len(sReasoningEffort) > 0 Then oRoot.Add "reasoning_effort", sReasoningEffort
     If bStream Then oRoot.Add "stream", True
 
     BuildRequestBody = JsonConverter.ConvertToJson(oRoot)
@@ -1880,12 +1995,12 @@ Public Sub CreateAIForm()
     ctl.BackStyle = 0
 
     ' --- cboProvider: 模型下拉框 (胶囊形) ---
-    Set ctl = CreateControl(frm.Name, acComboBox, acDetail, , , 2800, 130, 2800, 360)
+    Set ctl = CreateControl(frm.Name, acComboBox, acDetail, , , 2600, 130, 2600, 360)
     ctl.Name = "cboProvider"
     ctl.FontName = "Microsoft YaHei"
     ctl.FontSize = 10
     ctl.RowSourceType = "Value List"
-    ctl.RowSource = """DeepSeek Flash"";""DeepSeek Pro"";""通义千问"";""文心一言"";""Kimi"";""自定义"""
+    ctl.RowSource = GetProviderRowSource()
     ctl.DefaultValue = """DeepSeek Pro"""
     ctl.LimitToList = True
     ctl.BackColor = cSurface
@@ -1893,8 +2008,37 @@ Public Sub CreateAIForm()
     ctl.BorderColor = cBorder
     ctl.AfterUpdate = "=cboProvider_AfterUpdate()"
 
+    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 5400, 170, 700, 280)
+    ctl.Name = "lblReasoningEffort"
+    ctl.Caption = "思考"
+    ctl.FontName = "Microsoft YaHei"
+    ctl.FontSize = 8
+    ctl.ForeColor = cSubText
+    ctl.BackStyle = 0
+
+    Set ctl = CreateControl(frm.Name, acComboBox, acDetail, , , 6000, 130, 1400, 360)
+    ctl.Name = "cboReasoningEffort"
+    ctl.FontName = "Microsoft YaHei"
+    ctl.FontSize = 9
+    ctl.RowSourceType = "Value List"
+    ctl.RowSource = """默认"";""low"";""medium"";""high"";""xhigh"""
+    ctl.DefaultValue = """" & Replace(GetSavedReasoningEffort(), """", """""") & """"
+    ctl.LimitToList = True
+    ctl.BackColor = cSurface
+    ctl.ForeColor = cText
+    ctl.BorderColor = cBorder
+    ctl.AfterUpdate = "=cboReasoningEffort_AfterUpdate()"
+
+    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 6000, 500, 2100, 180)
+    ctl.Name = "lblReasoningCostHint"
+    ctl.Caption = "高级别可能增加成本"
+    ctl.FontName = "Microsoft YaHei"
+    ctl.FontSize = 7
+    ctl.ForeColor = cSubText
+    ctl.BackStyle = 0
+
     ' --- btnNewChat: 新对话 ---
-    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 6000, 130, 2200, 360)
+    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 7700, 130, 2000, 360)
     ctl.Name = "btnNewChat"
     ctl.Caption = ChrW(&H2795) & " 新对话"
     ctl.FontName = "Microsoft YaHei"
@@ -1904,7 +2048,7 @@ Public Sub CreateAIForm()
     ctl.OnClick = "=btnNewChat_Click()"
 
     ' --- btnHistory: 历史记录 ---
-    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 8400, 130, 2400, 360)
+    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 9900, 130, 2200, 360)
     ctl.Name = "btnHistory"
     ctl.Caption = " 历史记录"
     ctl.FontName = "Microsoft YaHei"
@@ -2207,17 +2351,28 @@ Private Sub CreateSharedChatControls(frm As Form)
     ctl.Caption = ChrW(&H2726) & " AccessAI Web"
     ctl.FontName = "Microsoft YaHei": ctl.FontSize = 13: ctl.FontBold = True: ctl.ForeColor = cAccent: ctl.BackStyle = 0
 
-    Set ctl = CreateControl(frm.Name, acComboBox, acDetail, , , 2800, 130, 2800, 360)
+    Set ctl = CreateControl(frm.Name, acComboBox, acDetail, , , 2600, 130, 2600, 360)
     ctl.Name = "cboProvider": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 10
-    ctl.RowSourceType = "Value List": ctl.RowSource = """DeepSeek Flash"";""DeepSeek Pro"";""通义千问"";""文心一言"";""Kimi"";""自定义"""
+    ctl.RowSourceType = "Value List": ctl.RowSource = GetProviderRowSource()
     ctl.DefaultValue = """DeepSeek Pro""": ctl.LimitToList = True: ctl.BackColor = cSurface: ctl.ForeColor = cText: ctl.BorderColor = cBorder
     ctl.AfterUpdate = "=cboProvider_AfterUpdate()"
 
-    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 6000, 130, 2200, 360)
+    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 5400, 170, 700, 280)
+    ctl.Name = "lblReasoningEffort": ctl.Caption = "思考": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 8: ctl.ForeColor = cSubText: ctl.BackStyle = 0
+    Set ctl = CreateControl(frm.Name, acComboBox, acDetail, , , 6000, 130, 1400, 360)
+    ctl.Name = "cboReasoningEffort": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 9
+    ctl.RowSourceType = "Value List": ctl.RowSource = """默认"";""low"";""medium"";""high"";""xhigh"""
+    ctl.DefaultValue = """" & Replace(GetSavedReasoningEffort(), """", """""") & """": ctl.LimitToList = True: ctl.BackColor = cSurface: ctl.ForeColor = cText: ctl.BorderColor = cBorder
+    ctl.AfterUpdate = "=cboReasoningEffort_AfterUpdate()"
+
+    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 6000, 500, 2100, 180)
+    ctl.Name = "lblReasoningCostHint": ctl.Caption = "高级别可能增加成本": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 7: ctl.ForeColor = cSubText: ctl.BackStyle = 0
+
+    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 7700, 130, 2000, 360)
     ctl.Name = "btnNewChat": ctl.Caption = ChrW(&H2795) & " 新对话": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 9: ctl.BackColor = cSurface
     ctl.OnClick = "=btnNewChat_Click()"
 
-    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 8400, 130, 2400, 360)
+    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 9900, 130, 2200, 360)
     ctl.Name = "btnHistory": ctl.Caption = " 历史记录": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 9: ctl.ForeColor = cSubText: ctl.BackColor = cBg
     ctl.OnClick = "=btnHistory_Click()"
 

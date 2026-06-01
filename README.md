@@ -4,7 +4,7 @@
 
 **让 Microsoft Access 无缝对接 AI 大模型的开源 VBA 工具库**
 
-> 在 Access 中一键调用 DeepSeek、通义千问、文心一言、Kimi 等 AI 大模型，支持流式输出、Markdown 渲染、打字机效果，开箱即用。
+> 在 Access 中一键调用 DeepSeek、通义千问、文心一言、Kimi、OpenAI、Gemini、GLM、豆包、腾讯混元、讯飞星火等 AI 大模型，支持流式输出、Markdown 渲染、打字机效果，开箱即用。
 
 ![Access](https://img.shields.io/badge/Microsoft%20Access-2010%2B-green)
 ![VBA](https://img.shields.io/badge/VBA-7.x-blue)
@@ -13,6 +13,9 @@
 ![Qwen](https://img.shields.io/badge/AI-通义千问-blue)
 ![ERNIE](https://img.shields.io/badge/AI-文心一言-red)
 ![Kimi](https://img.shields.io/badge/AI-Kimi-orange)
+![OpenAI](https://img.shields.io/badge/AI-OpenAI-black)
+![Gemini](https://img.shields.io/badge/AI-Gemini-4285F4)
+![GLM](https://img.shields.io/badge/AI-GLM-00A4EF)
 
 ---
 
@@ -22,12 +25,13 @@
 
 ## ✨ 功能特性
 
-- **多模型支持** — 内置 DeepSeek Flash、DeepSeek Pro、通义千问、文心一言、Kimi 等 AI 模型，下拉框一键切换
+- **多模型支持** — 内置 DeepSeek、通义千问、文心一言、Kimi、OpenAI、GLM、Gemini、豆包、腾讯混元、讯飞星火等模型，下拉框一键切换
 - **AI 对话问答** — 在 Access 窗体中直接向 AI 提问，获取智能回答
 - **对话历史记录** — 自动保持对话上下文，AI 能记住之前的对话内容，点击「新对话」重置
 - **历史对话持久化** — 对话记录自动保存至 Access 数据表 `tblChatHistory`，关闭数据库后仍可查阅
 - **历史会话管理** — 通过 `frmChatHistory` 窗体浏览、加载、删除历史会话
 - **系统提示词配置** — 在主窗体中填写 System Prompt，统一控制 AI 的角色、语气和回答规则
+- **思考强度配置** — 支持 `low` / `medium` / `high` / `xhigh` 档位，按需向兼容模型发送 `reasoning_effort` 参数；更高的思考级别可能会增加成本
 - **数据库对象分析** — 选择当前数据库中的表或查询，自动读取字段结构、记录数和样例数据交给 AI 分析
 - **自定义 API 端点** — 支持配置任意 OpenAI 兼容 API，模型下拉框选择「自定义」后填写 URL、Key、模型名称
 - **现代化 UI** — 参考 DeepSeek / Gemini 风格设计，白色背景 + 蓝紫色调，简洁美观
@@ -51,7 +55,7 @@
 | Microsoft Access | 2010 及以上（推荐 2016+） |
 | Windows | 7 及以上（流式输出需 Windows 10 1803+） |
 | VBA 引用 | Microsoft Scripting Runtime |
-| AI API Key | [DeepSeek](https://platform.deepseek.com/)、[通义千问](https://dashscope.console.aliyun.com/)、[文心一言](https://console.bce.baidu.com/qianfan/)、[Kimi](https://platform.moonshot.cn/) 的 API Key（按需配置） |
+| AI API Key | DeepSeek、通义千问、文心一言、Kimi、OpenAI、GLM、Gemini、豆包、腾讯混元、讯飞星火等平台的 API Key（按需配置） |
 
 ## 🚀 快速开始
 
@@ -91,6 +95,27 @@ Private Const WX_MODEL As String = "ernie-4.0-8k"
 Private Const KM_KEY   As String = "你的-Kimi-Key"
 Private Const KM_URL   As String = "https://api.moonshot.cn/v1/chat/completions"
 Private Const KM_MODEL As String = "moonshot-v1-8k"
+
+' OpenAI
+Private Const OA_KEY   As String = "你的-OpenAI-Key"
+Private Const OA_URL   As String = "https://api.openai.com/v1/chat/completions"
+Private Const OA_GPT55_MODEL As String = "gpt-5.5"
+Private Const OA_GPT54_MODEL As String = "gpt-5.4"
+
+' 智谱清言 GLM
+Private Const GLM_KEY  As String = "你的-GLM-Key"
+Private Const GLM_URL  As String = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
+Private Const GLM_FLASH_MODEL As String = "glm-4-flash"
+Private Const GLM_PLUS_MODEL  As String = "glm-4-plus"
+
+' Gemini (OpenAI 兼容接口)
+Private Const GM_KEY   As String = "你的-Gemini-Key"
+Private Const GM_URL   As String = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+Private Const GM_FLASH_MODEL As String = "gemini-1.5-flash"
+Private Const GM_PRO_MODEL   As String = "gemini-1.5-pro"
+
+' 豆包 / 腾讯混元 / 讯飞星火
+' 继续在 Module_Markdown 的“AI 提供商配置”区域修改对应 KEY、URL、MODEL 即可
 ```
 
 > 💡 只需配置你实际使用的模型的 Key，其他保持默认即可。
@@ -135,7 +160,7 @@ AccessAI/
 | 功能分区 | 说明 |
 |----------|------|
 | Markdown → 富文本 HTML | `MarkdownToRichText()` 将 Markdown 转为 Access 富文本控件支持的 HTML |
-| AI API 调用 (多模型) | 支持 DeepSeek/通义千问/文心一言/Kimi；支持 System Prompt；方案A：`StreamWithCurl` 流式 SSE；方案B：`SyncWithTypewriter` 同步+打字机 |
+| AI API 调用 (多模型) | 支持 DeepSeek/通义千问/文心一言/Kimi/OpenAI/GLM/Gemini/豆包/腾讯混元/讯飞星火；支持 System Prompt 与思考强度 `reasoning_effort`；方案A：`StreamWithCurl` 流式 SSE；方案B：`SyncWithTypewriter` 同步+打字机 |
 | 数据库对象分析 | 读取当前 Access 数据库中的表/查询，生成字段结构、记录数和前 30 行样例数据供 AI 分析 |
 | 对话 UI 模式 | `CreateAIForm` 富文本模式；`CreateAIWebForm` WebBrowser HTML 气泡模式 |
 | 对话历史持久化 | 自动建表 `tblChatHistory`，保存/加载/删除会话记录 |
@@ -173,6 +198,8 @@ SetTextBoxMarkdown Me.txtResult, sMarkdown
 - [x] 通义千问模型支持
 - [x] 文心一言模型支持
 - [x] Kimi 模型支持
+- [x] OpenAI / Gemini / GLM / 豆包 / 腾讯混元 / 讯飞星火 支持
+- [x] 思考强度 `low` / `medium` / `high` / `xhigh` 配置
 - [x] 多模型统一切换界面
 - [x] 对话历史记录
 - [x] 历史对话持久化存储与管理
@@ -223,7 +250,7 @@ SetTextBoxMarkdown Me.txtResult, sMarkdown
 
 **An open-source VBA toolkit that seamlessly connects Microsoft Access to AI large language models.**
 
-> Call DeepSeek, Qwen, ERNIE Bot, Kimi and other AI models directly from Access — with streaming output, Markdown rendering, and typewriter effects, ready to use out of the box.
+> Call DeepSeek, Qwen, ERNIE Bot, Kimi, OpenAI, Gemini, GLM, Doubao, Tencent Hunyuan, iFlytek Spark and other AI models directly from Access — with streaming output, Markdown rendering, and typewriter effects, ready to use out of the box.
 
 ![Access](https://img.shields.io/badge/Microsoft%20Access-2010%2B-green)
 ![VBA](https://img.shields.io/badge/VBA-7.x-blue)
@@ -232,6 +259,9 @@ SetTextBoxMarkdown Me.txtResult, sMarkdown
 ![Qwen](https://img.shields.io/badge/AI-Qwen-blue)
 ![ERNIE](https://img.shields.io/badge/AI-ERNIE-red)
 ![Kimi](https://img.shields.io/badge/AI-Kimi-orange)
+![OpenAI](https://img.shields.io/badge/AI-OpenAI-black)
+![Gemini](https://img.shields.io/badge/AI-Gemini-4285F4)
+![GLM](https://img.shields.io/badge/AI-GLM-00A4EF)
 
 ---
 
@@ -241,12 +271,13 @@ SetTextBoxMarkdown Me.txtResult, sMarkdown
 
 ## ✨ Features
 
-- **Multi-Model Support** — Built-in support for DeepSeek Flash, DeepSeek Pro, Alibaba Qwen, Baidu ERNIE, and Kimi — switch models via dropdown
+- **Multi-Model Support** — Built-in support for DeepSeek, Alibaba Qwen, Baidu ERNIE, Kimi, OpenAI, GLM, Gemini, Doubao, Tencent Hunyuan, and iFlytek Spark — switch models via dropdown
 - **AI Q&A Chat** — Ask AI questions directly from an Access form and get intelligent answers
 - **Conversation History** — Automatically maintains conversation context so the AI remembers previous exchanges; click "New Chat" to reset
 - **Persistent History Storage** — Conversations are automatically saved to an Access table `tblChatHistory` and persist across sessions
 - **History Session Management** — Browse, load, and delete historical sessions via the `frmChatHistory` form
 - **System Prompt Configuration** — Set a System Prompt in the main form to control the AI role, tone, and response rules
+- **Reasoning Effort Configuration** — Supports `low` / `medium` / `high` / `xhigh` and sends `reasoning_effort` to compatible models when selected; higher reasoning levels may increase cost
 - **Database Object Analysis** — Select a table or query from the current database and send schema, row count, and sample rows to AI for analysis
 - **Custom API Endpoint** — Configure any OpenAI-compatible API by selecting “Custom” from the model dropdown and entering URL, Key, and Model name
 - **Modern UI** — DeepSeek / Gemini-inspired design with clean white background and blue-purple accents
@@ -270,7 +301,7 @@ SetTextBoxMarkdown Me.txtResult, sMarkdown
 | Microsoft Access | 2010 or later (2016+ recommended) |
 | Windows | 7 or later (streaming requires Windows 10 1803+) |
 | VBA Reference | Microsoft Scripting Runtime |
-| AI API Key | API Keys from [DeepSeek](https://platform.deepseek.com/), [Alibaba Qwen](https://dashscope.console.aliyun.com/), [Baidu ERNIE](https://console.bce.baidu.com/qianfan/), [Kimi](https://platform.moonshot.cn/) (configure as needed) |
+| AI API Key | API Keys from DeepSeek, Alibaba Qwen, Baidu ERNIE, Kimi, OpenAI, GLM, Gemini, Doubao, Tencent Hunyuan, iFlytek Spark, or another OpenAI-compatible provider (configure as needed) |
 
 ## 🚀 Quick Start
 
@@ -310,6 +341,27 @@ Private Const WX_MODEL As String = "ernie-4.0-8k"
 Private Const KM_KEY   As String = "your-Kimi-Key"
 Private Const KM_URL   As String = "https://api.moonshot.cn/v1/chat/completions"
 Private Const KM_MODEL As String = "moonshot-v1-8k"
+
+' OpenAI
+Private Const OA_KEY   As String = "your-OpenAI-Key"
+Private Const OA_URL   As String = "https://api.openai.com/v1/chat/completions"
+Private Const OA_GPT55_MODEL As String = "gpt-5.5"
+Private Const OA_GPT54_MODEL As String = "gpt-5.4"
+
+' GLM (BigModel)
+Private Const GLM_KEY  As String = "your-GLM-Key"
+Private Const GLM_URL  As String = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
+Private Const GLM_FLASH_MODEL As String = "glm-4-flash"
+Private Const GLM_PLUS_MODEL  As String = "glm-4-plus"
+
+' Gemini (OpenAI-compatible endpoint)
+Private Const GM_KEY   As String = "your-Gemini-Key"
+Private Const GM_URL   As String = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+Private Const GM_FLASH_MODEL As String = "gemini-1.5-flash"
+Private Const GM_PRO_MODEL   As String = "gemini-1.5-pro"
+
+' Doubao / Tencent Hunyuan / iFlytek Spark
+' Update the corresponding KEY, URL, and MODEL constants in the AI provider configuration area of Module_Markdown.
 ```
 
 > 💡 You only need to configure the Key for the model(s) you actually use.
@@ -354,7 +406,7 @@ AccessAI/
 | Section | Description |
 |---------|-------------|
 | Markdown → Rich Text HTML | `MarkdownToRichText()` converts Markdown to HTML supported by Access Rich Text controls |
-| AI API Calls (Multi-Model) | Supports DeepSeek/Qwen/ERNIE/Kimi; supports System Prompt; Plan A: `StreamWithCurl` for SSE streaming; Plan B: `SyncWithTypewriter` for sync + typewriter |
+| AI API Calls (Multi-Model) | Supports DeepSeek/Qwen/ERNIE/Kimi/OpenAI/GLM/Gemini/Doubao/Tencent Hunyuan/iFlytek Spark; supports System Prompt and `reasoning_effort`; Plan A: `StreamWithCurl` for SSE streaming; Plan B: `SyncWithTypewriter` for sync + typewriter |
 | Database Object Analysis | Reads tables/queries from the current Access database and sends schema, row count, and the first 30 sample rows to AI |
 | Chat UI Modes | `CreateAIForm` for Rich Text mode; `CreateAIWebForm` for WebBrowser HTML bubble mode |
 | Persistent Chat History | Auto-creates `tblChatHistory` table; saves/loads/deletes session records |
@@ -392,6 +444,8 @@ SetTextBoxMarkdown Me.txtResult, sMarkdown
 - [x] Alibaba Qwen model support
 - [x] Baidu ERNIE model support
 - [x] Kimi model support
+- [x] OpenAI / Gemini / GLM / Doubao / Tencent Hunyuan / iFlytek Spark support
+- [x] Reasoning effort `low` / `medium` / `high` / `xhigh` configuration
 - [x] Unified multi-model switching UI
 - [x] Conversation history
 - [x] Persistent history storage & session management
