@@ -107,6 +107,10 @@ Private m_sSessionId As String
 ' 当前会话在 txtAnswer 中累积的富文本 HTML(对话气泡)
 Private m_sChatHtml As String
 Private m_sStreamingAnswer As String
+Private m_lPromptTokens As Long
+Private m_lCompletionTokens As Long
+Private m_lTotalTokens As Long
+Private m_sTokenSource As String
 
 Private Const HISTORY_TABLE As String = "tblChatHistory"
 Private Const HISTORY_FORM As String = "frmChatHistory"
@@ -391,6 +395,150 @@ Public Sub ClearHistory()
     m_sSessionId = NewSessionId()
     m_sChatHtml = ""
     m_sStreamingAnswer = ""
+    ResetTokenStats
+End Sub
+
+Private Sub ResetTokenStats()
+    m_lPromptTokens = 0
+    m_lCompletionTokens = 0
+    m_lTotalTokens = 0
+    m_sTokenSource = ""
+End Sub
+
+Private Function EstimateTokensFromText(ByVal sText As String) As Long
+    Dim i As Long
+    Dim lAsciiChars As Long
+    Dim lOtherChars As Long
+    Dim lCode As Long
+
+    For i = 1 To Len(sText)
+        lCode = AscW(Mid$(sText, i, 1))
+        If lCode >= 0 And lCode < 128 Then
+            If Mid$(sText, i, 1) > " " Then lAsciiChars = lAsciiChars + 1
+        Else
+            lOtherChars = lOtherChars + 1
+        End If
+    Next i
+
+    EstimateTokensFromText = CLng((lAsciiChars + 3) \ 4) + lOtherChars
+    If Len(Trim$(sText)) > 0 And EstimateTokensFromText = 0 Then EstimateTokensFromText = 1
+End Function
+
+Private Function EstimatePromptTokens(ByVal colHist As Collection, ByVal sSystemPrompt As String) As Long
+    Dim lTokens As Long
+    Dim vMsg As Variant
+
+    lTokens = 3
+    If Len(Trim$(sSystemPrompt)) > 0 Then lTokens = lTokens + EstimateTokensFromText(sSystemPrompt) + 4
+    If Not colHist Is Nothing Then
+        For Each vMsg In colHist
+            lTokens = lTokens + EstimateTokensFromText(CStr(vMsg("content"))) + 4
+        Next vMsg
+    End If
+    EstimatePromptTokens = lTokens
+End Function
+
+Private Sub SetEstimatedTokenStats(ByVal lPromptTokens As Long, ByVal sAnswer As String)
+    m_lPromptTokens = lPromptTokens
+    m_lCompletionTokens = EstimateTokensFromText(sAnswer)
+    m_lTotalTokens = m_lPromptTokens + m_lCompletionTokens
+    m_sTokenSource = "估算"
+End Sub
+
+Private Function TryApplyUsageObject(ByVal oUsage As Object) As Boolean
+    Dim lPrompt As Long
+    Dim lCompletion As Long
+    Dim lTotal As Long
+
+    lPrompt = UsageLong(oUsage, "prompt_tokens")
+    If lPrompt = 0 Then lPrompt = UsageLong(oUsage, "input_tokens")
+    lCompletion = UsageLong(oUsage, "completion_tokens")
+    If lCompletion = 0 Then lCompletion = UsageLong(oUsage, "output_tokens")
+    lTotal = UsageLong(oUsage, "total_tokens")
+
+    If lTotal > 0 Or lPrompt > 0 Or lCompletion > 0 Then
+        If lTotal = 0 Then lTotal = lPrompt + lCompletion
+        m_lPromptTokens = lPrompt
+        m_lCompletionTokens = lCompletion
+        m_lTotalTokens = lTotal
+        m_sTokenSource = "API"
+        TryApplyUsageObject = True
+    End If
+End Function
+
+Private Function UsageLong(ByVal oUsage As Object, ByVal sName As String) As Long
+    On Error Resume Next
+    UsageLong = CLng(Nz(oUsage(sName), 0))
+    If Err.Number <> 0 Then
+        Err.Clear
+        UsageLong = 0
+    End If
+End Function
+
+Private Function TryExtractUsageFromJson(ByVal sJson As String) As Boolean
+    On Error Resume Next
+    Dim oJson As Object
+    Set oJson = JsonConverter.ParseJson(sJson)
+    If Err.Number <> 0 Or oJson Is Nothing Then
+        Err.Clear
+        Exit Function
+    End If
+    Set oJson = oJson("usage")
+    If Err.Number <> 0 Or oJson Is Nothing Then
+        Err.Clear
+        Exit Function
+    End If
+    TryExtractUsageFromJson = TryApplyUsageObject(oJson)
+End Function
+
+Private Function TryExtractUsageFromSSE(ByVal sChunk As String) As Boolean
+    Dim vLines As Variant
+    Dim i As Long
+    Dim sLine As String
+    Dim sJsonStr As String
+
+    sChunk = Replace(sChunk, vbCrLf, vbLf)
+    sChunk = Replace(sChunk, vbCr, vbLf)
+    vLines = Split(sChunk, vbLf)
+
+    For i = 0 To UBound(vLines)
+        sLine = CStr(vLines(i))
+        If Left$(sLine, 6) = "data: " Then
+            sJsonStr = Mid$(sLine, 7)
+            If sJsonStr <> "[DONE]" And Len(Trim$(sJsonStr)) > 0 Then
+                If TryExtractUsageFromJson(sJsonStr) Then TryExtractUsageFromSSE = True
+            End If
+        End If
+    Next i
+End Function
+
+Private Function FormatTokenStats(Optional ByVal bWithSource As Boolean = True) As String
+    If m_lPromptTokens = 0 And m_lCompletionTokens = 0 And m_lTotalTokens = 0 Then Exit Function
+    FormatTokenStats = "Token 输入 " & CStr(m_lPromptTokens) & _
+                       " / 输出 " & CStr(m_lCompletionTokens) & _
+                       " / 合计 " & CStr(m_lTotalTokens)
+    If bWithSource And Len(m_sTokenSource) > 0 Then FormatTokenStats = FormatTokenStats & " (" & m_sTokenSource & ")"
+End Function
+
+Private Sub UpdateTokenStatsView(frm As Form)
+    On Error Resume Next
+    If HasControl(frm, "lblTokenStats") Then
+        If Len(FormatTokenStats(True)) > 0 Then
+            frm!lblTokenStats.Caption = FormatTokenStats(True)
+        Else
+            frm!lblTokenStats.Caption = "Token 输入 0 / 输出 0 / 合计 0"
+        End If
+    End If
+End Sub
+
+Private Sub SetStatus(frm As Form, ByVal sStatus As String, Optional ByVal bAppendTokens As Boolean = False)
+    On Error Resume Next
+    If bAppendTokens And Len(FormatTokenStats(True)) > 0 And Not HasControl(frm, "lblTokenStats") Then
+        frm!lblMsg.Caption = sStatus & " ｜ " & FormatTokenStats(True)
+    Else
+        frm!lblMsg.Caption = sStatus
+    End If
+    UpdateTokenStatsView frm
 End Sub
 
 '====================================================
@@ -990,7 +1138,7 @@ Public Function btnNewChat_Click()
     frm!txtAnswer.TextFormat = acTextFormatHTMLRichText
     frm!txtAnswer.Value = ""
     RefreshAlternateChatView frm
-    frm!lblMsg.Caption = "已开始新对话。选择模型，输入问题后点击发送"
+    SetStatus frm, "已开始新对话。选择模型，输入问题后点击发送"
 End Function
 
 '====================================================
@@ -1343,6 +1491,8 @@ Public Sub Askai()
     m_colHistory.Add oUserMsg
     m_sLastAnswer = ""
     m_sStreamingAnswer = ""
+    ResetTokenStats
+    UpdateTokenStatsView frm
 
     ' 追加用户气泡到对话视图
     RebuildChatHtmlFromHistory
@@ -1392,7 +1542,7 @@ Public Sub Askai()
         If m_colHistory(ix)("role") = "user" Then lTurns = lTurns + 1
     Next ix
     If Len(m_sLastAnswer) > 0 Then
-        frm!lblMsg.Caption = "回答完成。 (共 " & Len(m_sLastAnswer) & " 字符, 第 " & lTurns & " 轮对话)"
+        SetStatus frm, "回答完成。 (共 " & Len(m_sLastAnswer) & " 字符, 第 " & lTurns & " 轮对话)", True
     End If
 End Sub
 
@@ -1428,7 +1578,9 @@ Private Sub StreamWithCurl(frm As Form, ByVal sQuestion As String, _
 
     ' 构建请求体 (stream=true)
     Dim sBody As String
+    Dim lEstimatedPromptTokens As Long
     sBody = BuildRequestBody(sQuestion, sModel, True, m_colHistory, sSystemPrompt, sReasoningEffort)
+    lEstimatedPromptTokens = EstimatePromptTokens(m_colHistory, sSystemPrompt)
 
     ' 写入请求体文件 (UTF-8 无 BOM)
     WriteUTF8NoBom sTmpBody, sBody
@@ -1546,11 +1698,12 @@ Private Sub StreamWithCurl(frm As Form, ByVal sQuestion As String, _
     m_sLastAnswer = sFullText
     m_sStreamingAnswer = sFullText
     If Len(sFullText) > 0 Then
+        If Not TryExtractUsageFromSSE(sAll) Then SetEstimatedTokenStats lEstimatedPromptTokens, sFullText
         ' 将本轮 AI 气泡固化到会话 HTML
         m_sChatHtml = m_sChatHtml & BuildAiBubbleHtml(sFullText)
         frm!txtAnswer.TextFormat = acTextFormatHTMLRichText
         frm!txtAnswer.Value = m_sChatHtml
-        frm!lblMsg.Caption = "回答完成。 (共 " & Len(sFullText) & " 字符)"
+        SetStatus frm, "回答完成。 (共 " & Len(sFullText) & " 字符)", True
         ScrollAnswerToEnd frm
     Else
         ' 可能是错误响应: 回退成纯文本显示错误, 不影响会话 HTML
@@ -1602,7 +1755,9 @@ Private Sub SyncWithTypewriter(frm As Form, ByVal sQuestion As String, _
     On Error GoTo ErrHandler
 
     Dim sBody As String
+    Dim lEstimatedPromptTokens As Long
     sBody = BuildRequestBody(sQuestion, sModel, False, m_colHistory, sSystemPrompt, sReasoningEffort)
+    lEstimatedPromptTokens = EstimatePromptTokens(m_colHistory, sSystemPrompt)
 
     DoCmd.Hourglass True
     frm!lblMsg.Caption = "AI 正在思考..."
@@ -1630,6 +1785,7 @@ Private Sub SyncWithTypewriter(frm As Form, ByVal sQuestion As String, _
     Set oJson = JsonConverter.ParseJson(xmlHttp.responseText)
     Dim sAnswer As String
     sAnswer = oJson("choices")(1)("message")("content")
+    If Not TryExtractUsageFromJson(xmlHttp.responseText) Then SetEstimatedTokenStats lEstimatedPromptTokens, sAnswer
     m_sLastAnswer = sAnswer
     Set xmlHttp = Nothing
     DoCmd.Hourglass False
@@ -1646,7 +1802,7 @@ Private Sub SyncWithTypewriter(frm As Form, ByVal sQuestion As String, _
     m_sChatHtml = m_sChatHtml & BuildAiBubbleHtml(sAnswer)
     frm!txtAnswer.TextFormat = acTextFormatHTMLRichText
     frm!txtAnswer.Value = m_sChatHtml
-    frm!lblMsg.Caption = "回答完成。 (共 " & Len(sAnswer) & " 字符)"
+    SetStatus frm, "回答完成。 (共 " & Len(sAnswer) & " 字符)", True
     ScrollAnswerToEnd frm
 
 ExitHere:
@@ -2213,12 +2369,21 @@ Public Sub CreateAIForm()
     ctl.EnterKeyBehavior = True
 
     ' --- lblMsg: 状态标签 ---
-    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 500, 8500, 13400, 280)
+    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 500, 8500, 8300, 280)
     ctl.Name = "lblMsg"
     ctl.Caption = "选择模型，输入问题后点击发送"
     ctl.FontName = "Microsoft YaHei"
     ctl.FontSize = 8
     ctl.ForeColor = cSubText
+    ctl.BackStyle = 0
+
+    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 8900, 8500, 5000, 280)
+    ctl.Name = "lblTokenStats"
+    ctl.Caption = "Token 输入 0 / 输出 0 / 合计 0"
+    ctl.FontName = "Microsoft YaHei"
+    ctl.FontSize = 8
+    ctl.ForeColor = cSubText
+    ctl.TextAlign = 3
     ctl.BackStyle = 0
 
     ' --- 输入区: 圆角感容器 ---
@@ -2406,8 +2571,10 @@ Private Sub CreateSharedChatControls(frm As Form)
     ctl.Name = "btnAnalyzeData": ctl.Caption = "分析数据": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 9: ctl.ForeColor = cAccentText: ctl.BackColor = cAccent
     ctl.OnClick = "=btnAnalyzeData_Click()"
 
-    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 500, 8500, 13400, 280)
+    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 500, 8500, 8300, 280)
     ctl.Name = "lblMsg": ctl.Caption = "选择模型，输入问题后点击发送": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 8: ctl.ForeColor = cSubText: ctl.BackStyle = 0
+    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 8900, 8500, 5000, 280)
+    ctl.Name = "lblTokenStats": ctl.Caption = "Token 输入 0 / 输出 0 / 合计 0": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 8: ctl.ForeColor = cSubText: ctl.TextAlign = 3: ctl.BackStyle = 0
     Set ctl = CreateControl(frm.Name, acTextBox, acDetail, , , 550, 9000, 10800, 1200)
     ctl.Name = "txtQ": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 11: ctl.ScrollBars = 2: ctl.EnterKeyBehavior = True: ctl.BackColor = cSurface: ctl.BorderStyle = 0
     Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 11600, 9050, 2200, 1100)

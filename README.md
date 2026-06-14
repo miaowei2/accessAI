@@ -32,6 +32,7 @@
 - **历史会话管理** — 通过 `frmChatHistory` 窗体浏览、加载、删除历史会话
 - **系统提示词配置** — 在主窗体中填写 System Prompt，统一控制 AI 的角色、语气和回答规则
 - **思考强度配置** — 支持 `low` / `medium` / `high` / `xhigh` 档位，按需向兼容模型发送 `reasoning_effort` 参数；更高的思考级别可能会增加成本
+- **Token 调用统计** — 每次请求后显示输入 Token、输出 Token 与合计 Token；优先使用 API 返回的 `usage`，无返回时自动估算
 - **数据库对象分析** — 选择当前数据库中的表或查询，自动读取字段结构、记录数和样例数据交给 AI 分析
 - **自定义 API 端点** — 支持配置任意 OpenAI 兼容 API，模型下拉框选择「自定义」后填写 URL、Key、模型名称
 - **现代化 UI** — 参考 DeepSeek / Gemini 风格设计，白色背景 + 蓝紫色调，简洁美观
@@ -200,6 +201,7 @@ SetTextBoxMarkdown Me.txtResult, sMarkdown
 - [x] Kimi 模型支持
 - [x] OpenAI / Gemini / GLM / 豆包 / 腾讯混元 / 讯飞星火 支持
 - [x] 思考强度 `low` / `medium` / `high` / `xhigh` 配置
+- [x] Token 调用与返回统计
 - [x] 多模型统一切换界面
 - [x] 对话历史记录
 - [x] 历史对话持久化存储与管理
