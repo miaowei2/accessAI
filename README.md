@@ -45,6 +45,7 @@
   - 有序/无序列表
   - 引用块、水平线
   - 链接、图片提示
+  - WebBrowser HTML 气泡模式支持 Markdown 表格渲染
 - **一键建表单** — `CreateAIForm` 自动生成 AI 问答窗体，零手动配置
 - **双对话模式** — 保留 Access 富文本模式，并新增 WebBrowser HTML 气泡对话模式
 - **UTF-8 全面支持** — 中文输入/输出无乱码

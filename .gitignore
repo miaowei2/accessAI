@@ -1,0 +1,7 @@
+# Microsoft Access lock/temp files
+*.laccdb
+*.ldb
+
+# Windows shell metadata
+Thumbs.db
+Desktop.ini

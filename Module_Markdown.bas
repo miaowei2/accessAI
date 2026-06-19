@@ -125,8 +125,9 @@ Private Const HISTORY_FORM As String = "frmChatHistory"
 '====================================================
 ' 核心: Markdown -> Access 富文本 HTML
 ' Access 支持: <b> <i> <u> <p> <br> <font> <ul> <ol> <li>
+' bRenderTables=True 会生成标准 <table>, 仅用于 WebBrowser HTML 对话模式.
 '====================================================
-Public Function MarkdownToRichText(ByVal sMd As String) As String
+Public Function MarkdownToRichText(ByVal sMd As String, Optional ByVal bRenderTables As Boolean = False) As String
     Dim vLines As Variant
     Dim out As String
     Dim i As Long
@@ -235,6 +236,12 @@ Public Function MarkdownToRichText(ByVal sMd As String) As String
 
         ' ---- 表格 ----
         If IsTblRow(ln) Then
+            If bRenderTables And i < UBound(vLines) And IsTblSep(CStr(vLines(i + 1))) Then
+                If inUL Then: out = out & "</ul>": inUL = False
+                If inOL Then: out = out & "</ol>": inOL = False
+                out = out & BuildMarkdownTableHtml(vLines, i)
+                GoTo NxtLine
+            End If
             If Not IsTblSep(ln) Then
                 out = out & "<p><font face=""Consolas"" size=""2"">" & EscHtml(ln) & "</font></p>"
             End If
@@ -547,15 +554,8 @@ End Sub
 '   无法设置背景色与圆角, 因此用 "右对齐+主题色" 代表用户,
 '   "左对齐+灰色" 代表 AI, 模拟网页聊天列表效果
 '====================================================
-Private Function HtmlEscapeText(ByVal s As String) As String
-    s = Replace(s, "&", "&amp;")
-    s = Replace(s, "<", "&lt;")
-    s = Replace(s, ">", "&gt;")
-    HtmlEscapeText = s
-End Function
-
 Private Function TextToRtBr(ByVal s As String) As String
-    s = HtmlEscapeText(s)
+    s = EscHtml(s)
     s = Replace(s, vbCrLf, vbLf)
     s = Replace(s, vbCr, vbLf)
     s = Replace(s, vbLf, "<br>")
@@ -645,6 +645,26 @@ NotFound:
     HasControl = False
 End Function
 
+Private Function IsFormLoaded(ByVal sFormName As String) As Boolean
+    On Error GoTo NotLoaded
+    IsFormLoaded = CurrentProject.AllForms(sFormName).IsLoaded
+    Exit Function
+NotLoaded:
+    IsFormLoaded = False
+End Function
+
+Private Function PreferredChatFormName() As String
+    If FormExists(AI_WEB_FORM) And IsFormLoaded(AI_WEB_FORM) Then
+        PreferredChatFormName = AI_WEB_FORM
+    ElseIf FormExists(AI_FORM) And IsFormLoaded(AI_FORM) Then
+        PreferredChatFormName = AI_FORM
+    ElseIf FormExists(AI_FORM) Then
+        PreferredChatFormName = AI_FORM
+    ElseIf FormExists(AI_WEB_FORM) Then
+        PreferredChatFormName = AI_WEB_FORM
+    End If
+End Function
+
 Private Sub RefreshAlternateChatView(frm As Form)
     On Error Resume Next
     If HasControl(frm, "wbChat") Then
@@ -712,36 +732,16 @@ End Function
 '====================================================
 ' 方案A: WebBrowser HTML 对话窗口渲染
 '====================================================
-Private Function WebHtmlEscape(ByVal s As String) As String
-    s = Replace(s, "&", "&amp;")
-    s = Replace(s, "<", "&lt;")
-    s = Replace(s, ">", "&gt;")
-    s = Replace(s, """", "&quot;")
-    WebHtmlEscape = s
-End Function
-
-Private Function TextToWebHtml(ByVal s As String) As String
-    s = WebHtmlEscape(s)
-    s = Replace(s, vbCrLf, vbLf)
-    s = Replace(s, vbCr, vbLf)
-    s = Replace(s, vbLf, "<br>")
-    TextToWebHtml = s
-End Function
-
-Private Function MarkdownToWebHtml(ByVal sMd As String) As String
-    MarkdownToWebHtml = MarkdownToRichText(sMd)
-End Function
-
 Private Function BuildWebBubble(ByVal sRole As String, ByVal sContent As String, Optional ByVal bStreaming As Boolean = False) As String
     Dim sBody As String
 
     If sRole = "user" Then
-        sBody = TextToWebHtml(sContent)
+        sBody = TextToRtBr(sContent)
     Else
         If bStreaming Then
-            sBody = TextToWebHtml(sContent) & "<span class='cursor'></span>"
+            sBody = TextToRtBr(sContent) & "<span class='cursor'></span>"
         Else
-            sBody = MarkdownToWebHtml(sContent)
+            sBody = MarkdownToRichText(sContent, True)
         End If
     End If
 
@@ -820,7 +820,7 @@ Private Function BuildWebChatDocument(ByVal sBodyHtml As String) As String
         ".aiWrap,.userWrap{padding:10px 12px;}.avatar{width:34px;height:34px;line-height:34px;text-align:center;font-size:12px;font-weight:bold;font-family:'Microsoft YaHei',Arial,sans-serif;}" & _
         ".aiAvatar{background:#dcecff;color:#255f9e;}.userAvatar{background:#61b875;color:#ffffff;}" & _
         ".bubble{font-family:'Microsoft YaHei',Segoe UI,Arial,sans-serif;font-size:14px;line-height:1.65;text-align:left;word-wrap:break-word;}.bubble td{padding:12px 15px;}.aiBubble{background:#ffffff;border:1px solid #dbe7f5;color:#1d1e20;}.userBubble{background:#2f7dff;border:1px solid #2f7dff;color:#ffffff;}" & _
-        ".bubble p{margin:5px 0 10px}.bubble ul,.bubble ol{margin-top:6px;margin-bottom:10px;padding-left:22px}.bubble code,.bubble pre,.bubble .code{font-family:Consolas,monospace}.bubble a{color:#0366d6}.userBubble font,.userBubble a{color:#fff!important}.empty{padding-top:120px;text-align:center;color:#7d8796;font-size:13px}.cursor{display:inline-block;width:8px;height:16px;margin-left:2px;background:#2f7dff;}" & _
+        ".bubble p{margin:5px 0 10px}.bubble ul,.bubble ol{margin-top:6px;margin-bottom:10px;padding-left:22px}.bubble code,.bubble pre,.bubble .code{font-family:Consolas,monospace}.bubble a{color:#0366d6}.mdTable{border-collapse:collapse;margin:8px 0 12px;width:100%;font-size:13px;}.mdTable th,.mdTable td{border:1px solid #d0d7de;padding:6px 8px;vertical-align:top;}.mdTable th{background:#f6f8fa;font-weight:bold;}.mdTable tr:nth-child(even) td{background:#fbfdff;}.userBubble font,.userBubble a{color:#fff!important}.empty{padding-top:120px;text-align:center;color:#7d8796;font-size:13px}.cursor{display:inline-block;width:8px;height:16px;margin-left:2px;background:#2f7dff;}" & _
         "</style></head><body>" & sBodyHtml & _
         "<script>window.scrollTo(0,document.body.scrollHeight);</script></body></html>"
 End Function
@@ -1106,6 +1106,7 @@ Private Sub SaveMessageToDb(ByVal sSessionId As String, _
                             ByVal sRole As String, _
                             ByVal sContent As String)
     On Error Resume Next
+    EnsureHistoryTable
     Dim db As Object ' DAO.Database
     Dim rs As Object ' DAO.Recordset
     Set db = CurrentDb
@@ -1245,6 +1246,8 @@ End Function
 '====================================================
 Public Sub ShowChatHistory()
     On Error GoTo ErrHandler
+
+    EnsureHistoryTable
 
     Dim db As Object ' DAO.Database
     Dim rs As Object ' DAO.Recordset
@@ -1390,14 +1393,16 @@ Public Function btnLoadSession_Click()
     DoCmd.Close acForm, HISTORY_FORM
 
     ' 更新主窗体
-    If Not FormExists(AI_FORM) Then
-        MsgBox "请先运行 CreateAIForm 创建 AI 窗体。", vbInformation
+    Dim sTargetForm As String
+    sTargetForm = PreferredChatFormName()
+    If Len(sTargetForm) = 0 Then
+        MsgBox "请先运行 CreateAIForm 或 CreateAIWebForm 创建 AI 窗体。", vbInformation
         Exit Function
     End If
 
-    DoCmd.OpenForm AI_FORM, acNormal
+    DoCmd.OpenForm sTargetForm, acNormal
     Dim frmAI As Form
-    Set frmAI = Forms(AI_FORM)
+    Set frmAI = Forms(sTargetForm)
     RebuildChatHtmlFromHistory
     frmAI!txtAnswer.TextFormat = acTextFormatHTMLRichText
     frmAI!txtAnswer.Value = m_sChatHtml
@@ -1625,7 +1630,6 @@ Private Sub StreamWithCurl(frm As Form, ByVal sQuestion As String, _
     Dim bProcDone As Boolean
     Dim sAll As String
     Dim sErr As String
-    Dim sCursor As String
 
     sFullText = ""
     lLastRawLen = 0
@@ -1634,7 +1638,6 @@ Private Sub StreamWithCurl(frm As Form, ByVal sQuestion As String, _
     bDone = False
     bFirstToken = False
     bProcDone = False
-    sCursor = ChrW$(&H258C)    ' ▌
 
     Do
         DoEvents
@@ -2817,19 +2820,6 @@ Private Function EscHtml(ByVal s As String) As String
 End Function
 
 '====================================================
-' JSON 字符串转义
-'====================================================
-Private Function EscJsonStr(ByVal s As String) As String
-    s = Replace(s, "\", "\\")
-    s = Replace(s, """", "\" & Chr$(34))
-    s = Replace(s, vbCrLf, "\n")
-    s = Replace(s, vbCr, "\n")
-    s = Replace(s, vbLf, "\n")
-    s = Replace(s, vbTab, "\t")
-    EscJsonStr = s
-End Function
-
-'====================================================
 ' 正则工厂
 '====================================================
 Private Function MakeRE(ByVal sPat As String, _
@@ -2913,6 +2903,117 @@ Private Function IsTblSep(ByVal ln As String) As Boolean
     Dim re As Object
     Set re = MakeRE("^\s*\|[\s\-:|]+\|\s*$")
     IsTblSep = re.Test(ln)
+End Function
+
+Private Function SplitMarkdownTableRow(ByVal ln As String) As Variant
+    Dim t As String
+    Dim col As Collection
+    Dim arr() As String
+    Dim sCell As String
+    Dim i As Long
+    Dim ch As String
+
+    t = Trim$(ln)
+    If Left$(t, 1) = "|" Then t = Mid$(t, 2)
+    If Right$(t, 1) = "|" Then t = Left$(t, Len(t) - 1)
+
+    Set col = New Collection
+    sCell = ""
+    i = 1
+    Do While i <= Len(t)
+        ch = Mid$(t, i, 1)
+        If ch = "\" And i < Len(t) And Mid$(t, i + 1, 1) = "|" Then
+            sCell = sCell & "|"
+            i = i + 2
+        ElseIf ch = "|" Then
+            col.Add Trim$(sCell)
+            sCell = ""
+            i = i + 1
+        Else
+            sCell = sCell & ch
+            i = i + 1
+        End If
+    Loop
+    col.Add Trim$(sCell)
+
+    ReDim arr(0 To col.Count - 1)
+    For i = 1 To col.Count
+        arr(i - 1) = CStr(col(i))
+    Next i
+    SplitMarkdownTableRow = arr
+End Function
+
+Private Function TableCellAlignStyle(ByVal sSepCell As String) As String
+    Dim t As String
+    t = Replace(Trim$(sSepCell), " ", "")
+    If Len(t) = 0 Then Exit Function
+
+    If Left$(t, 1) = ":" And Right$(t, 1) = ":" Then
+        TableCellAlignStyle = " style='text-align:center;'"
+    ElseIf Right$(t, 1) = ":" Then
+        TableCellAlignStyle = " style='text-align:right;'"
+    ElseIf Left$(t, 1) = ":" Then
+        TableCellAlignStyle = " style='text-align:left;'"
+    End If
+End Function
+
+Private Function TableArrayCount(ByVal v As Variant) As Long
+    On Error GoTo EmptyArray
+    TableArrayCount = UBound(v) - LBound(v) + 1
+    Exit Function
+EmptyArray:
+    TableArrayCount = 0
+End Function
+
+Private Function TableArrayValue(ByVal v As Variant, ByVal lIndex As Long) As String
+    On Error Resume Next
+    If lIndex >= LBound(v) And lIndex <= UBound(v) Then
+        TableArrayValue = CStr(v(lIndex))
+    Else
+        TableArrayValue = ""
+    End If
+End Function
+
+Private Function BuildMarkdownTableHtml(ByVal vLines As Variant, ByRef lLineIndex As Long) As String
+    Dim vHead As Variant
+    Dim vSep As Variant
+    Dim vRow As Variant
+    Dim lColCount As Long
+    Dim lRowIndex As Long
+    Dim c As Long
+    Dim sOut As String
+    Dim sAlign As String
+
+    vHead = SplitMarkdownTableRow(CStr(vLines(lLineIndex)))
+    vSep = SplitMarkdownTableRow(CStr(vLines(lLineIndex + 1)))
+    lColCount = TableArrayCount(vHead)
+    If TableArrayCount(vSep) > lColCount Then lColCount = TableArrayCount(vSep)
+
+    sOut = "<table class='mdTable'><thead><tr>"
+    For c = 0 To lColCount - 1
+        sAlign = TableCellAlignStyle(TableArrayValue(vSep, c))
+        sOut = sOut & "<th" & sAlign & ">" & FmtInline(TableArrayValue(vHead, c)) & "</th>"
+    Next c
+    sOut = sOut & "</tr></thead><tbody>"
+
+    lRowIndex = lLineIndex + 2
+    Do While lRowIndex <= UBound(vLines)
+        If Not IsTblRow(CStr(vLines(lRowIndex))) Then Exit Do
+        If IsTblSep(CStr(vLines(lRowIndex))) Then Exit Do
+
+        vRow = SplitMarkdownTableRow(CStr(vLines(lRowIndex)))
+        sOut = sOut & "<tr>"
+        For c = 0 To lColCount - 1
+            sAlign = TableCellAlignStyle(TableArrayValue(vSep, c))
+            sOut = sOut & "<td" & sAlign & ">" & FmtInline(TableArrayValue(vRow, c)) & "</td>"
+        Next c
+        sOut = sOut & "</tr>"
+        lRowIndex = lRowIndex + 1
+    Loop
+
+    sOut = sOut & "</tbody></table>"
+    lLineIndex = lRowIndex - 1
+    BuildMarkdownTableHtml = sOut
 End Function
 
 '====================================================
