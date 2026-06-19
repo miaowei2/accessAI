@@ -20,6 +20,8 @@
 ---
 
 ![AccessAI 界面截图](1.png)
+![AccessAI 界面截图](2.png)
+
 
 ---
 
@@ -269,7 +271,7 @@ SetTextBoxMarkdown Me.txtResult, sMarkdown
 ---
 
 ![AccessAI Interface](1.png)
-
+![AccessAI Interface](2.png)
 ---
 
 ## ✨ Features
