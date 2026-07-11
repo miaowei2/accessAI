@@ -1,8 +1,10 @@
-# AccessAI
+# Access LLM Toolkit
 
 [中文](#-功能特性) | [English](#-features)
 
 **让 Microsoft Access 无缝对接 AI 大模型的开源 VBA 工具库**
+
+Microsoft Access AI / LLM integration toolkit for VBA developers.
 
 > 在 Access 中一键调用 DeepSeek、通义千问、文心一言、Kimi、OpenAI、Gemini、GLM、豆包、腾讯混元、讯飞星火等 AI 大模型，支持流式输出、Markdown 渲染、打字机效果，开箱即用。
 
@@ -19,15 +21,15 @@
 
 ---
 
-![AccessAI 界面截图](1.png)
-![AccessAI 界面截图](2.png)
+![Access LLM Toolkit 界面截图](1.png)
+![Access LLM Toolkit 界面截图](2.png)
 
 
 ---
 
 ## ✨ 功能特性
 
-- **多模型支持** — 内置 DeepSeek、通义千问、文心一言、Kimi、OpenAI、GLM、Gemini、豆包、腾讯混元、讯飞星火等模型，下拉框一键切换
+- **多模型支持** — 内置 DeepSeek、通义千问、文心一言、Kimi、OpenAI GPT-5.6 Sol / Treea / Luna、GPT-5.5 / 5.4、GLM、Gemini、豆包、腾讯混元、讯飞星火等模型，下拉框一键切换
 - **AI 对话问答** — 在 Access 窗体中直接向 AI 提问，获取智能回答
 - **对话历史记录** — 自动保持对话上下文，AI 能记住之前的对话内容，点击「新对话」重置
 - **历史对话持久化** — 对话记录自动保存至 Access 数据表 `tblChatHistory`，关闭数据库后仍可查阅
@@ -36,7 +38,12 @@
 - **思考强度配置** — 支持 `low` / `medium` / `high` / `xhigh` 档位，按需向兼容模型发送 `reasoning_effort` 参数；更高的思考级别可能会增加成本
 - **Token 调用统计** — 每次请求后显示输入 Token、输出 Token 与合计 Token；优先使用 API 返回的 `usage`，无返回时自动估算
 - **数据库对象分析** — 选择当前数据库中的表或查询，自动读取字段结构、记录数和样例数据交给 AI 分析
+- **数据质量预设** — 内置完整性、重复、类型异常、日期离群值和索引性能等分析场景
+- **文档问答** — 支持读取 TXT、CSV、Word、Excel 和 PDF，将内容加入问题后交给 AI 总结或分析
+- **提示词模板** — 内置通用助手、Access SQL、数据质量、文档和经营分析模板
+- **Access SQL 助手** — 根据数据库结构生成 SQL，经过独立预览、规则校验和用户二次确认后才执行
 - **自定义 API 端点** — 支持配置任意 OpenAI 兼容 API，模型下拉框选择「自定义」后填写 URL、Key、模型名称
+- **API Key 安全存储** — 内置提供商凭据不写入 VBA 源码，使用 Windows DPAPI 加密并绑定当前 Windows 用户
 - **现代化 UI** — 参考 DeepSeek / Gemini 风格设计，白色背景 + 蓝紫色调，简洁美观
 - **流式输出 (SSE)** — 基于 curl 的流式传输，实时逐字显示 AI 回答（Windows 10 1803+）
 - **打字机效果** — 无 curl 环境自动降级为同步请求 + 打字机动画
@@ -59,6 +66,7 @@
 | Microsoft Access | 2010 及以上（推荐 2016+） |
 | Windows | 7 及以上（流式输出需 Windows 10 1803+） |
 | VBA 引用 | Microsoft Scripting Runtime |
+| Office 文档读取 | Word / PDF 需要 Microsoft Word；Excel 文件需要 Microsoft Excel |
 | AI API Key | DeepSeek、通义千问、文心一言、Kimi、OpenAI、GLM、Gemini、豆包、腾讯混元、讯飞星火等平台的 API Key（按需配置） |
 
 ## 🚀 快速开始
@@ -76,53 +84,14 @@
 
 ### 3. 配置 API Key
 
-打开 `Module_Markdown` 模块，根据你要使用的 AI 模型，修改对应的 Key：
+先运行 `CreateAIForm` 创建主窗体，然后点击顶部的 **API 设置**。选择提供商，输入 API Key 并点击 **保存加密凭据**。
 
 ```vba
-' DeepSeek
-Private Const DS_KEY   As String = "你的-DeepSeek-Key"
-Private Const DS_URL   As String = "https://api.deepseek.com/chat/completions"
-Private Const DS_FLASH_MODEL As String = "deepseek-v4-flash"
-Private Const DS_PRO_MODEL   As String = "deepseek-v4-pro"
-
-' 通义千问 (阿里云百炼)
-Private Const QW_KEY   As String = "你的-通义千问-Key"
-Private Const QW_URL   As String = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
-Private Const QW_MODEL As String = "qwen-plus"
-
-' 文心一言 (百度千帆)
-Private Const WX_KEY   As String = "你的-文心一言-Key"
-Private Const WX_URL   As String = "https://qianfan.baidubce.com/v2/chat/completions"
-Private Const WX_MODEL As String = "ernie-4.0-8k"
-
-' Kimi (月之暗面)
-Private Const KM_KEY   As String = "你的-Kimi-Key"
-Private Const KM_URL   As String = "https://api.moonshot.cn/v1/chat/completions"
-Private Const KM_MODEL As String = "moonshot-v1-8k"
-
-' OpenAI
-Private Const OA_KEY   As String = "你的-OpenAI-Key"
-Private Const OA_URL   As String = "https://api.openai.com/v1/chat/completions"
-Private Const OA_GPT55_MODEL As String = "gpt-5.5"
-Private Const OA_GPT54_MODEL As String = "gpt-5.4"
-
-' 智谱清言 GLM
-Private Const GLM_KEY  As String = "你的-GLM-Key"
-Private Const GLM_URL  As String = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
-Private Const GLM_FLASH_MODEL As String = "glm-4-flash"
-Private Const GLM_PLUS_MODEL  As String = "glm-4-plus"
-
-' Gemini (OpenAI 兼容接口)
-Private Const GM_KEY   As String = "你的-Gemini-Key"
-Private Const GM_URL   As String = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
-Private Const GM_FLASH_MODEL As String = "gemini-1.5-flash"
-Private Const GM_PRO_MODEL   As String = "gemini-1.5-pro"
-
-' 豆包 / 腾讯混元 / 讯飞星火
-' 继续在 Module_Markdown 的“AI 提供商配置”区域修改对应 KEY、URL、MODEL 即可
+' 也可以从 VBA 立即窗口直接打开安全设置窗体
+ConfigureApiKeys
 ```
 
-> 💡 只需配置你实际使用的模型的 Key，其他保持默认即可。
+API Key 不再保存在 VBA 源码中。程序使用 Windows DPAPI 加密后写入当前用户设置，只有当前 Windows 用户可以解密。更换 Windows 用户或电脑后需要重新配置。
 
 ### 4. 创建窗体并使用
 
@@ -149,7 +118,7 @@ CreateAIWebForm
 ## 📁 项目结构
 
 ```
-AccessAI/
+access-llm-toolkit/
 ├── AI.accdb                 # 示例 Access 数据库（含已导入的模块和窗体）
 ├── JsonConverter.bas        # JSON 解析模块 (VBA-JSON v2.3.1)
 ├── Module_Markdown.bas      # 核心模块：AI 调用 + Markdown 渲染 + 窗体生成 + 历史管理
@@ -186,6 +155,9 @@ ShowChatHistory
 ' 清除当前对话历史
 ClearHistory
 
+' 打开 API Key 安全设置
+ConfigureApiKeys
+
 ' 创建 Markdown 查看器窗体
 CreateMarkdownForm
 
@@ -202,7 +174,7 @@ SetTextBoxMarkdown Me.txtResult, sMarkdown
 - [x] 通义千问模型支持
 - [x] 文心一言模型支持
 - [x] Kimi 模型支持
-- [x] OpenAI / Gemini / GLM / 豆包 / 腾讯混元 / 讯飞星火 支持
+- [x] OpenAI GPT-5.6 Sol / Treea / Luna、GPT-5.5 / 5.4、Gemini、GLM、豆包、腾讯混元、讯飞星火支持
 - [x] 思考强度 `low` / `medium` / `high` / `xhigh` 配置
 - [x] Token 调用与返回统计
 - [x] 多模型统一切换界面
@@ -213,12 +185,23 @@ SetTextBoxMarkdown Me.txtResult, sMarkdown
 - [x] 系统提示词 (System Prompt) 配置
 - [x] 当前数据库表/查询分析
 - [x] WebBrowser HTML 气泡对话模式
+- [x] TXT / CSV / Word / Excel / PDF 文档问答
+- [x] 数据质量分析预设与提示词模板
+- [x] AI 生成 Access SQL、安全预览和确认执行
+- [x] API Key 安全配置（从代码常量迁移到本地配置，并使用 Windows DPAPI 保护）
+- [ ] 可视化模型参数配置（温度、最大 Token、超时）
+- [ ] 请求取消、失败重试与限流退避
+- [ ] 文件与文档问答（TXT / CSV / PDF / Word / Excel）
+- [ ] 对话搜索、重命名、导出 Markdown / HTML
+- [ ] 提示词模板库与业务场景预设
+- [ ] AI 生成 Access SQL，并在用户确认后预览执行
+- [ ] Function Calling，让模型安全调用白名单中的 Access 查询或 VBA 函数
 
 ## 🐛 问题反馈
 
 如果发现 Bug 或有改进建议，请：
 
-- 提交 [Issue](https://github.com/miaowei2/accessdevelop/issues)
+- 提交 [Issue](https://github.com/miaowei2/accessAI/issues)
 - 详细描述问题或建议
 - 如可能，提供复现步骤
 
@@ -270,13 +253,13 @@ SetTextBoxMarkdown Me.txtResult, sMarkdown
 
 ---
 
-![AccessAI Interface](1.png)
-![AccessAI Interface](2.png)
+![Access LLM Toolkit Interface](1.png)
+![Access LLM Toolkit Interface](2.png)
 ---
 
 ## ✨ Features
 
-- **Multi-Model Support** — Built-in support for DeepSeek, Alibaba Qwen, Baidu ERNIE, Kimi, OpenAI, GLM, Gemini, Doubao, Tencent Hunyuan, and iFlytek Spark — switch models via dropdown
+- **Multi-Model Support** — Built-in support for DeepSeek, Alibaba Qwen, Baidu ERNIE, Kimi, OpenAI GPT-5.6 Sol / Treea / Luna, GPT-5.5 / 5.4, GLM, Gemini, Doubao, Tencent Hunyuan, and iFlytek Spark — switch models via dropdown
 - **AI Q&A Chat** — Ask AI questions directly from an Access form and get intelligent answers
 - **Conversation History** — Automatically maintains conversation context so the AI remembers previous exchanges; click "New Chat" to reset
 - **Persistent History Storage** — Conversations are automatically saved to an Access table `tblChatHistory` and persist across sessions
@@ -284,7 +267,12 @@ SetTextBoxMarkdown Me.txtResult, sMarkdown
 - **System Prompt Configuration** — Set a System Prompt in the main form to control the AI role, tone, and response rules
 - **Reasoning Effort Configuration** — Supports `low` / `medium` / `high` / `xhigh` and sends `reasoning_effort` to compatible models when selected; higher reasoning levels may increase cost
 - **Database Object Analysis** — Select a table or query from the current database and send schema, row count, and sample rows to AI for analysis
+- **Data Quality Presets** — Built-in checks for completeness, duplicates, type anomalies, date outliers, indexes, and performance
+- **Document Q&A** — Read TXT, CSV, Word, Excel, and PDF content and add it to a question for AI analysis
+- **Prompt Templates** — Built-in general, Access SQL, data quality, document analysis, and business analysis templates
+- **Access SQL Assistant** — Generate SQL from database metadata, then validate and preview it before explicit user-confirmed execution
 - **Custom API Endpoint** — Configure any OpenAI-compatible API by selecting “Custom” from the model dropdown and entering URL, Key, and Model name
+- **Secure API Key Storage** — Built-in provider credentials stay out of VBA source and are protected with Windows DPAPI for the current Windows user
 - **Modern UI** — DeepSeek / Gemini-inspired design with clean white background and blue-purple accents
 - **Streaming Output (SSE)** — Real-time token-by-token display via curl-based SSE streaming (Windows 10 1803+)
 - **Typewriter Effect** — Automatic fallback to synchronous request + typewriter animation when curl is unavailable
@@ -306,6 +294,7 @@ SetTextBoxMarkdown Me.txtResult, sMarkdown
 | Microsoft Access | 2010 or later (2016+ recommended) |
 | Windows | 7 or later (streaming requires Windows 10 1803+) |
 | VBA Reference | Microsoft Scripting Runtime |
+| Office document reading | Microsoft Word for Word/PDF; Microsoft Excel for Excel workbooks |
 | AI API Key | API Keys from DeepSeek, Alibaba Qwen, Baidu ERNIE, Kimi, OpenAI, GLM, Gemini, Doubao, Tencent Hunyuan, iFlytek Spark, or another OpenAI-compatible provider (configure as needed) |
 
 ## 🚀 Quick Start
@@ -323,53 +312,14 @@ In the VBA Editor: **Tools → References → Check `Microsoft Scripting Runtime
 
 ### 3. Configure API Key
 
-Open the `Module_Markdown` module and update the API Keys for the models you want to use:
+Run `CreateAIForm`, then click **API Settings** in the top toolbar. Select a provider, enter its API key, and click **Save encrypted credential**.
 
 ```vba
-' DeepSeek
-Private Const DS_KEY   As String = "your-DeepSeek-Key"
-Private Const DS_URL   As String = "https://api.deepseek.com/chat/completions"
-Private Const DS_FLASH_MODEL As String = "deepseek-v4-flash"
-Private Const DS_PRO_MODEL   As String = "deepseek-v4-pro"
-
-' Alibaba Qwen (通义千问)
-Private Const QW_KEY   As String = "your-Qwen-Key"
-Private Const QW_URL   As String = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
-Private Const QW_MODEL As String = "qwen-plus"
-
-' Baidu ERNIE (文心一言)
-Private Const WX_KEY   As String = "your-ERNIE-Key"
-Private Const WX_URL   As String = "https://qianfan.baidubce.com/v2/chat/completions"
-Private Const WX_MODEL As String = "ernie-4.0-8k"
-
-' Kimi (Moonshot AI)
-Private Const KM_KEY   As String = "your-Kimi-Key"
-Private Const KM_URL   As String = "https://api.moonshot.cn/v1/chat/completions"
-Private Const KM_MODEL As String = "moonshot-v1-8k"
-
-' OpenAI
-Private Const OA_KEY   As String = "your-OpenAI-Key"
-Private Const OA_URL   As String = "https://api.openai.com/v1/chat/completions"
-Private Const OA_GPT55_MODEL As String = "gpt-5.5"
-Private Const OA_GPT54_MODEL As String = "gpt-5.4"
-
-' GLM (BigModel)
-Private Const GLM_KEY  As String = "your-GLM-Key"
-Private Const GLM_URL  As String = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
-Private Const GLM_FLASH_MODEL As String = "glm-4-flash"
-Private Const GLM_PLUS_MODEL  As String = "glm-4-plus"
-
-' Gemini (OpenAI-compatible endpoint)
-Private Const GM_KEY   As String = "your-Gemini-Key"
-Private Const GM_URL   As String = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
-Private Const GM_FLASH_MODEL As String = "gemini-1.5-flash"
-Private Const GM_PRO_MODEL   As String = "gemini-1.5-pro"
-
-' Doubao / Tencent Hunyuan / iFlytek Spark
-' Update the corresponding KEY, URL, and MODEL constants in the AI provider configuration area of Module_Markdown.
+' You can also open the secure settings form from the Immediate Window
+ConfigureApiKeys
 ```
 
-> 💡 You only need to configure the Key for the model(s) you actually use.
+API keys are no longer stored in VBA source code. Windows DPAPI encrypts them in the current user's settings, so they can only be decrypted by that Windows user. Configure them again after moving to another user account or computer.
 
 ### 4. Create Form and Go
 
@@ -396,7 +346,7 @@ CreateAIWebForm
 ## 📁 Project Structure
 
 ```
-AccessAI/
+access-llm-toolkit/
 ├── AI.accdb                 # Sample Access database (modules & forms included)
 ├── JsonConverter.bas        # JSON parsing module (VBA-JSON v2.3.1)
 ├── Module_Markdown.bas      # Core module: AI calls + Markdown rendering + form generation + history management
@@ -433,6 +383,9 @@ ShowChatHistory
 ' Clear current conversation history
 ClearHistory
 
+' Open secure API key settings
+ConfigureApiKeys
+
 ' Create Markdown viewer form
 CreateMarkdownForm
 
@@ -449,7 +402,7 @@ SetTextBoxMarkdown Me.txtResult, sMarkdown
 - [x] Alibaba Qwen model support
 - [x] Baidu ERNIE model support
 - [x] Kimi model support
-- [x] OpenAI / Gemini / GLM / Doubao / Tencent Hunyuan / iFlytek Spark support
+- [x] OpenAI GPT-5.6 Sol / Treea / Luna, GPT-5.5 / 5.4, Gemini, GLM, Doubao, Tencent Hunyuan, and iFlytek Spark support
 - [x] Reasoning effort `low` / `medium` / `high` / `xhigh` configuration
 - [x] Unified multi-model switching UI
 - [x] Conversation history
@@ -459,12 +412,23 @@ SetTextBoxMarkdown Me.txtResult, sMarkdown
 - [x] System Prompt configuration
 - [x] Current database table/query analysis
 - [x] WebBrowser HTML bubble chat mode
+- [x] TXT / CSV / Word / Excel / PDF document Q&A
+- [x] Data quality presets and prompt templates
+- [x] AI-generated Access SQL with validation, preview, and confirmed execution
+- [x] Secure API key configuration (move secrets out of source constants and protect them with Windows DPAPI)
+- [ ] Visual model parameters (temperature, max tokens, and timeout)
+- [ ] Request cancellation, retries, and rate-limit backoff
+- [ ] File and document Q&A (TXT / CSV / PDF / Word / Excel)
+- [ ] Conversation search, rename, and Markdown / HTML export
+- [ ] Prompt template library and business workflow presets
+- [ ] Generate Access SQL with preview and explicit confirmation before execution
+- [ ] Function calling for allow-listed Access queries and VBA functions
 
 ## 🐛 Bug Reports
 
 If you find a bug or have a suggestion:
 
-- Submit an [Issue](https://github.com/miaowei2/accessdevelop/issues)
+- Submit an [Issue](https://github.com/miaowei2/accessAI/issues)
 - Describe the problem or suggestion in detail
 - Include reproduction steps if possible
 
