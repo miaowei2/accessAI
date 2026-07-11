@@ -23,6 +23,7 @@ Microsoft Access AI / LLM integration toolkit for VBA developers.
 
 ![Access LLM Toolkit 界面截图](1.png)
 ![Access LLM Toolkit 界面截图](2.png)
+![Access LLM Toolkit 界面截图](3.png) 
 
 
 ---
