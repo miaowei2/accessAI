@@ -13,7 +13,7 @@ Option Explicit
 ' 快速开始:
 '   在 VBA 立即窗口执行:
 '       CreateAIForm          ' 自动创建 AI 问答窗体
-'   然后在 Access 中打开窗体 frmAI, 选择模型, 输入问题, 点击 [提问]
+'   然后打开 frmAI, 在 [模型配置] 中保存设置, 返回聊天界面输入问题并发送
 '
 '   其他可用:
 '       ShowMarkdown "# 标题" & vbCrLf & "**粗体**"
@@ -56,44 +56,54 @@ Private Const SB_BOTTOM As Long = 7
 Private Const CRYPTPROTECT_UI_FORBIDDEN As Long = &H1
 Private Const SETTINGS_APP As String = "AccessAI"
 Private Const API_KEY_SECTION As String = "ApiKeys"
+Private Const SETTINGS_SECTION As String = "Settings"
+Private Const DEFAULT_TEMPERATURE As Double = 0.7
+Private Const DEFAULT_MAX_TOKENS As Long = 8192
+Private Const DEFAULT_TIMEOUT_SECONDS As Long = 180
 
 ' ---------- AI 提供商配置 ----------
 ' API Key 由 Windows DPAPI 加密并保存在当前 Windows 用户设置中
 
 ' DeepSeek
 Private Const DS_URL   As String = "https://api.deepseek.com/chat/completions"
-Private Const DS_FLASH_MODEL As String = "deepseek-v4-flash"
+Private Const DS_FLASH_MODEL As String = "deepseek-flash"
 Private Const DS_PRO_MODEL   As String = "deepseek-v4-pro"
 
 ' 通义千问 (阿里云百炼)
 Private Const QW_URL   As String = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
-Private Const QW_MODEL As String = "qwen-plus"
+Private Const QW_MAX_MODEL   As String = "qwen3.8-max"
+Private Const QW_PLUS_MODEL  As String = "qwen3.7-plus"
+Private Const QW_FLASH_MODEL As String = "qwen3.8-flash"
 
 ' 文心一言 (百度千帆)
 Private Const WX_URL   As String = "https://qianfan.baidubce.com/v2/chat/completions"
-Private Const WX_MODEL As String = "ernie-4.0-8k"
+Private Const WX_51_MODEL As String = "ernie-5.1"
+Private Const WX_50_THINKING_MODEL As String = "ernie-5.0-thinking-latest"
 
 ' Kimi (月之暗面)
-Private Const KM_URL   As String = "https://api.moonshot.cn/v1/chat/completions"
-Private Const KM_MODEL As String = "moonshot-v1-8k"
+Private Const KM_URL   As String = "https://api.moonshot.ai/v1/chat/completions"
+Private Const KM_K3_MODEL As String = "kimi-k3"
+Private Const KM_K27_CODE_MODEL As String = "kimi-k2.7-code"
+Private Const KM_K26_MODEL As String = "kimi-k2.6"
 
 ' OpenAI
 Private Const OA_URL   As String = "https://api.openai.com/v1/chat/completions"
-Private Const OA_GPT56_SOL_MODEL As String = "gpt-5.6-sol"
-Private Const OA_GPT56_TREEA_MODEL As String = "gpt-5.6-treea"
-Private Const OA_GPT56_LUNA_MODEL As String = "gpt-5.6-luna"
+Private Const OA_GPT6_ASTRA_MODEL As String = "gpt-6-astra"
+Private Const OA_GPT6_SOL_MODEL As String = "gpt-6-sol"
+Private Const OA_GPT6_LUNA_MODEL As String = "gpt-6-luna"
+Private Const OA_GPT56_MODEL As String = "gpt-5.6"
 Private Const OA_GPT55_MODEL As String = "gpt-5.5"
 Private Const OA_GPT54_MODEL As String = "gpt-5.4"
 
 ' 智谱清言 GLM (BigModel)
 Private Const GLM_URL  As String = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
+Private Const GLM_5_MODEL As String = "glm-5"
 Private Const GLM_FLASH_MODEL As String = "glm-4-flash"
-Private Const GLM_PLUS_MODEL  As String = "glm-4-plus"
 
 ' Gemini (OpenAI 兼容接口)
 Private Const GM_URL   As String = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
-Private Const GM_FLASH_MODEL As String = "gemini-1.5-flash"
-Private Const GM_PRO_MODEL   As String = "gemini-1.5-pro"
+Private Const GM_FLASH_MODEL As String = "gemini-2.5-flash"
+Private Const GM_PRO_MODEL   As String = "gemini-2.5-pro"
 
 ' 豆包 (OpenAI 兼容接口)
 Private Const DB_URL   As String = "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
@@ -105,11 +115,13 @@ Private Const HY_MODEL As String = "hunyuan-turbos-latest"
 
 ' 讯飞星火 (OpenAI 兼容接口)
 Private Const XF_URL   As String = "https://spark-api-open.xf-yun.com/v1/chat/completions"
-Private Const XF_MODEL As String = "generalv3.5"
+Private Const XF_MODEL As String = "4.0Ultra"
 
 Private Const AI_FORM   As String = "frmAI"
 Private Const AI_WEB_FORM As String = "frmAIWeb"
 Private Const API_KEY_FORM As String = "frmApiKeySettings"
+Private Const MODEL_SETTINGS_FORM As String = "frmModelSettings"
+Private Const DATA_TOOLS_FORM As String = "frmAIDataTools"
 Private Const SQL_PREVIEW_FORM As String = "frmSqlPreview"
 Private Const MD_FORM   As String = "frmMarkdownViewer"
 Private Const TXT_MD    As String = "txtMarkdown"
@@ -117,18 +129,24 @@ Private Const TXT_MD    As String = "txtMarkdown"
 ' ---------- 对话历史记录 ----------
 Private m_colHistory As Collection
 Private m_sLastAnswer As String
+Private m_sLastReasoning As String
 Private m_sSessionId As String
 
 ' 当前会话在 txtAnswer 中累积的富文本 HTML(对话气泡)
 Private m_sChatHtml As String
 Private m_sStreamingAnswer As String
+Private m_sStreamingReasoning As String
+Private m_bShowReasoning As Boolean
 Private m_lPromptTokens As Long
 Private m_lCompletionTokens As Long
 Private m_lTotalTokens As Long
 Private m_sTokenSource As String
 Private m_sLastStreamError As String
+Private m_bCancelRequested As Boolean
+Private m_lCurlProcessId As Long
 
 Private Const HISTORY_TABLE As String = "tblChatHistory"
+Private Const SESSION_TABLE As String = "tblChatSessions"
 Private Const HISTORY_FORM As String = "frmChatHistory"
 
 
@@ -341,13 +359,14 @@ Private Function GetProviderRowSource() As String
 
     vProviders = Array( _
         "DeepSeek Flash", "DeepSeek Pro", _
-        "通义千问 Plus", "通义千问", _
-        "文心一言", "Kimi", _
-        "OpenAI GPT-5.6 Sol", "OpenAI GPT-5.6 Treea", "OpenAI GPT-5.6 Luna", _
-        "OpenAI GPT-5.5", "OpenAI GPT-5.4", _
-        "GLM Flash", "GLM Plus", _
-        "Gemini Flash", "Gemini Pro", _
-        "豆包", "腾讯混元", "讯飞星火", _
+        "通义千问 3.8 Max", "通义千问 3.7 Plus", "通义千问 3.8 Flash", _
+        "文心 ERNIE 5.1", "文心 ERNIE 5.0 Thinking", _
+        "Kimi K3", "Kimi K2.7 Code", "Kimi K2.6", _
+        "OpenAI GPT-6 Astra", "OpenAI GPT-6 Sol", "OpenAI GPT-6 Luna", _
+        "OpenAI GPT-5.6", "OpenAI GPT-5.5", "OpenAI GPT-5.4", _
+        "GLM-5", "GLM Flash", _
+        "Gemini 2.5 Flash", "Gemini 2.5 Pro", _
+        "豆包", "腾讯混元", "讯飞星火 Ultra", _
         "自定义")
 
     For i = LBound(vProviders) To UBound(vProviders)
@@ -357,20 +376,31 @@ Private Function GetProviderRowSource() As String
     GetProviderRowSource = sRows
 End Function
 
+Private Function GetCredentialProviderRowSource() As String
+    GetCredentialProviderRowSource = _
+        """DeepSeek Pro"";""通义千问 3.8 Max"";""文心 ERNIE 5.1"";""Kimi K3"";" & _
+        """OpenAI GPT-6 Astra"";""OpenAI GPT-5.6"";""GLM-5"";" & _
+        """Gemini 2.5 Pro"";""豆包"";""腾讯混元"";""讯飞星火 Ultra"""
+End Function
+
 Private Function ProviderCredentialName(ByVal sProvider As String) As String
     Select Case sProvider
         Case "DeepSeek Flash", "DeepSeek Pro", "DeepSeek": ProviderCredentialName = "DeepSeek"
-        Case "通义千问 Plus", "通义千问": ProviderCredentialName = "Qwen"
-        Case "文心一言": ProviderCredentialName = "ERNIE"
-        Case "Kimi": ProviderCredentialName = "Kimi"
-        Case "OpenAI GPT-5.6 Sol", "OpenAI GPT-5.6 Treea", "OpenAI GPT-5.6 Luna", _
+        Case "通义千问 3.8 Max", "通义千问 3.7 Plus", "通义千问 3.8 Flash", _
+             "通义千问 Plus", "通义千问": ProviderCredentialName = "Qwen"
+        Case "文心 ERNIE 5.1", "文心 ERNIE 5.0 Thinking", "文心一言": ProviderCredentialName = "ERNIE"
+        Case "Kimi K3", "Kimi K2.7 Code", "Kimi K2.6", "Kimi": ProviderCredentialName = "Kimi"
+            Case "OpenAI GPT-6 Astra", "OpenAI GPT-6 Sol", "OpenAI GPT-6 Luna", _
+                 "OpenAI GPT-5.6", "OpenAI GPT-5.6 Sol", _
+                 "OpenAI GPT-5.6 Treea", "OpenAI GPT-5.6 Luna", _
              "OpenAI GPT-5.5", "OpenAI GPT-5.4"
             ProviderCredentialName = "OpenAI"
-        Case "GLM Flash", "GLM Plus": ProviderCredentialName = "GLM"
-        Case "Gemini Flash", "Gemini Pro": ProviderCredentialName = "Gemini"
+        Case "GLM-5", "GLM Flash", "GLM Plus": ProviderCredentialName = "GLM"
+        Case "Gemini 2.5 Flash", "Gemini 2.5 Pro", "Gemini Flash", "Gemini Pro": ProviderCredentialName = "Gemini"
         Case "豆包": ProviderCredentialName = "Doubao"
         Case "腾讯混元": ProviderCredentialName = "Hunyuan"
-        Case "讯飞星火": ProviderCredentialName = "Spark"
+        Case "讯飞星火 Ultra", "讯飞星火": ProviderCredentialName = "Spark"
+        Case "自定义": ProviderCredentialName = "Custom"
     End Select
 End Function
 
@@ -467,42 +497,60 @@ Private Sub GetProviderConfig(ByVal sProvider As String, _
             sUrl = DS_URL: sModel = DS_FLASH_MODEL
         Case "DeepSeek Pro", "DeepSeek"
             sUrl = DS_URL: sModel = DS_PRO_MODEL
-        Case "通义千问", "通义千问 Plus"
-            sUrl = QW_URL: sModel = QW_MODEL
-        Case "文心一言"
-            sUrl = WX_URL: sModel = WX_MODEL
-        Case "Kimi"
-            sUrl = KM_URL: sModel = KM_MODEL
-        Case "OpenAI GPT-5.6 Sol"
-            sUrl = OA_URL: sModel = OA_GPT56_SOL_MODEL
-        Case "OpenAI GPT-5.6 Treea"
-            sUrl = OA_URL: sModel = OA_GPT56_TREEA_MODEL
-        Case "OpenAI GPT-5.6 Luna"
-            sUrl = OA_URL: sModel = OA_GPT56_LUNA_MODEL
+        Case "通义千问 3.8 Max"
+            sUrl = QW_URL: sModel = QW_MAX_MODEL
+        Case "通义千问 3.8 Flash"
+            sUrl = QW_URL: sModel = QW_FLASH_MODEL
+        Case "通义千问 3.7 Plus", "通义千问", "通义千问 Plus"
+            sUrl = QW_URL: sModel = QW_PLUS_MODEL
+        Case "文心 ERNIE 5.0 Thinking"
+            sUrl = WX_URL: sModel = WX_50_THINKING_MODEL
+        Case "文心 ERNIE 5.1", "文心一言"
+            sUrl = WX_URL: sModel = WX_51_MODEL
+        Case "Kimi K2.7 Code"
+            sUrl = KM_URL: sModel = KM_K27_CODE_MODEL
+        Case "Kimi K2.6"
+            sUrl = KM_URL: sModel = KM_K26_MODEL
+        Case "Kimi K3", "Kimi"
+            sUrl = KM_URL: sModel = KM_K3_MODEL
+        Case "OpenAI GPT-6 Astra"
+            sUrl = OA_URL: sModel = OA_GPT6_ASTRA_MODEL
+        Case "OpenAI GPT-6 Sol"
+            sUrl = OA_URL: sModel = OA_GPT6_SOL_MODEL
+        Case "OpenAI GPT-6 Luna"
+            sUrl = OA_URL: sModel = OA_GPT6_LUNA_MODEL
+        Case "OpenAI GPT-5.6", "OpenAI GPT-5.6 Sol", "OpenAI GPT-5.6 Treea", "OpenAI GPT-5.6 Luna"
+            sUrl = OA_URL: sModel = OA_GPT56_MODEL
         Case "OpenAI GPT-5.5"
             sUrl = OA_URL: sModel = OA_GPT55_MODEL
         Case "OpenAI GPT-5.4"
             sUrl = OA_URL: sModel = OA_GPT54_MODEL
         Case "GLM Flash"
             sUrl = GLM_URL: sModel = GLM_FLASH_MODEL
-        Case "GLM Plus"
-            sUrl = GLM_URL: sModel = GLM_PLUS_MODEL
-        Case "Gemini Flash"
+        Case "GLM-5", "GLM Plus"
+            sUrl = GLM_URL: sModel = GLM_5_MODEL
+        Case "Gemini 2.5 Flash", "Gemini Flash"
             sUrl = GM_URL: sModel = GM_FLASH_MODEL
-        Case "Gemini Pro"
+        Case "Gemini 2.5 Pro", "Gemini Pro"
             sUrl = GM_URL: sModel = GM_PRO_MODEL
         Case "豆包"
             sUrl = DB_URL: sModel = DB_MODEL
         Case "腾讯混元"
             sUrl = HY_URL: sModel = HY_MODEL
-        Case "讯飞星火"
+        Case "讯飞星火 Ultra", "讯飞星火"
             sUrl = XF_URL: sModel = XF_MODEL
         Case "自定义"
             Dim frmC As Form
             Set frmC = Screen.ActiveForm
-            sUrl = Nz(frmC!txtCustomUrl, "")
-            sKey = Nz(frmC!txtCustomKey, "")
-            sModel = Nz(frmC!txtCustomModel, "")
+            If HasControl(frmC, "txtCustomUrl") Then
+                sUrl = Nz(frmC!txtCustomUrl, "")
+                sKey = Nz(frmC!txtCustomKey, "")
+                sModel = Nz(frmC!txtCustomModel, "")
+            Else
+                sUrl = GetSetting(SETTINGS_APP, SETTINGS_SECTION, "CustomUrl", "")
+                sKey = GetProviderApiKey("自定义")
+                sModel = GetSetting(SETTINGS_APP, SETTINGS_SECTION, "CustomModel", "")
+            End If
         Case Else  ' DeepSeek Pro (默认)
             sUrl = DS_URL: sModel = DS_PRO_MODEL
     End Select
@@ -524,9 +572,12 @@ End Sub
 Public Sub ClearHistory()
     Set m_colHistory = New Collection
     m_sLastAnswer = ""
+    m_sLastReasoning = ""
+    m_bShowReasoning = False
     m_sSessionId = NewSessionId()
     m_sChatHtml = ""
     m_sStreamingAnswer = ""
+    m_sStreamingReasoning = ""
     ResetTokenStats
 End Sub
 
@@ -694,15 +745,34 @@ Private Function BuildUserBubbleHtml(ByVal sText As String) As String
 End Function
 
 Private Function BuildAiBubbleHtml(ByVal sMarkdown As String) As String
-    BuildAiBubbleHtml = _
+    BuildAiBubbleHtml = BuildAiResponseBubbleHtml("", sMarkdown)
+End Function
+
+Private Function BuildAiResponseBubbleHtml(ByVal sReasoning As String, ByVal sMarkdown As String) As String
+    Dim sBody As String
+    If m_bShowReasoning And Len(Trim$(sReasoning)) > 0 Then
+        sBody = "<div align=""left""><font color=""#868E99"" face=""Microsoft YaHei""><b>思考过程</b></font></div>" & _
+                "<div align=""left""><font color=""#868E99"" face=""Microsoft YaHei"">" & TextToRtBr(sReasoning) & "</font></div>" & _
+                "<div>&nbsp;</div>"
+    End If
+    If Len(Trim$(sMarkdown)) > 0 Then
+        If Len(sBody) > 0 Then sBody = sBody & "<div align=""left""><font color=""#4E6CFE"" face=""Microsoft YaHei""><b>最终答案</b></font></div>"
+        sBody = sBody & "<div align=""left""><font color=""#1D1E20"" face=""Microsoft YaHei"">" & MarkdownToRichText(sMarkdown) & "</font></div>"
+    End If
+    BuildAiResponseBubbleHtml = _
         "<div align=""left""><font color=""#868E99"" face=""Microsoft YaHei""><b>AI</b></font></div>" & _
-        "<div align=""left""><font color=""#1D1E20"" face=""Microsoft YaHei"">" & MarkdownToRichText(sMarkdown) & "</font></div>" & _
+        sBody & _
         "<div>&nbsp;</div>"
 End Function
 
-Private Function BuildAiStreamingBubbleHtml(ByVal sText As String, ByVal bCursor As Boolean) As String
+Private Function BuildAiStreamingBubbleHtml(ByVal sText As String, ByVal bCursor As Boolean, _
+                                             Optional ByVal sReasoning As String = "") As String
     Dim s As String
-    s = TextToRtBr(sText)
+    If m_bShowReasoning And Len(sReasoning) > 0 Then
+        s = "<font color=""#868E99""><b>思考过程</b><br>" & TextToRtBr(sReasoning) & "</font><br><br>"
+        If Len(sText) > 0 Then s = s & "<font color=""#4E6CFE""><b>最终答案</b></font><br>"
+    End If
+    s = s & TextToRtBr(sText)
     If bCursor Then s = s & "<font color=""#4E6CFE"">&#9612;</font>"
     BuildAiStreamingBubbleHtml = _
         "<div align=""left""><font color=""#868E99"" face=""Microsoft YaHei""><b>AI</b></font></div>" & _
@@ -710,9 +780,11 @@ Private Function BuildAiStreamingBubbleHtml(ByVal sText As String, ByVal bCursor
         "<div>&nbsp;</div>"
 End Function
 
-Private Function TryShowStreamingAnswer(frm As Form, ByVal sText As String) As Boolean
+Private Function TryShowStreamingAnswer(frm As Form, ByVal sText As String, _
+                                        Optional ByVal sReasoning As String = "") As Boolean
     On Error GoTo Failed
-    frm!txtAnswer.Value = m_sChatHtml & BuildAiStreamingBubbleHtml(sText, True)
+    frm!txtAnswer.Value = m_sChatHtml & BuildAiStreamingBubbleHtml(sText, True, sReasoning)
+    UpdateReasoningToggle frm
     frm.Repaint
     ScrollAnswerToEnd frm
     TryShowStreamingAnswer = True
@@ -821,12 +893,18 @@ Private Sub RebuildChatHtmlFromHistory()
         If sRole = "user" Then
             m_sChatHtml = m_sChatHtml & BuildUserBubbleHtml(sContent)
         ElseIf sRole = "assistant" Then
-            m_sChatHtml = m_sChatHtml & BuildAiBubbleHtml(sContent)
+            If i = m_colHistory.Count And sContent = m_sLastAnswer Then
+                m_sChatHtml = m_sChatHtml & BuildAiResponseBubbleHtml(m_sLastReasoning, sContent)
+            Else
+                m_sChatHtml = m_sChatHtml & BuildAiBubbleHtml(sContent)
+            End If
         End If
     Next i
 End Sub
 
 Private Function GetSystemPromptFromForm(frm As Form) As String
+    GetSystemPromptFromForm = GetSavedSystemPrompt()
+    If Not HasControl(frm, "txtSystemPrompt") Then Exit Function
     On Error Resume Next
     GetSystemPromptFromForm = Trim$(Nz(frm!txtSystemPrompt, ""))
     If Err.Number = 0 Then SaveSystemPrompt GetSystemPromptFromForm
@@ -881,6 +959,8 @@ Private Function GetDataPresetQuestion(ByVal sPreset As String) As String
 End Function
 
 Private Function GetReasoningEffortFromForm(frm As Form) As String
+    GetReasoningEffortFromForm = GetSavedReasoningEffort()
+    If Not HasControl(frm, "cboReasoningEffort") Then Exit Function
     On Error Resume Next
     GetReasoningEffortFromForm = Trim$(Nz(frm!cboReasoningEffort, ""))
     If Err.Number = 0 Then SaveReasoningEffort GetReasoningEffortFromForm
@@ -903,6 +983,59 @@ Private Function NormalizeReasoningEffort(ByVal sReasoningEffort As String) As S
             NormalizeReasoningEffort = ""
     End Select
 End Function
+
+Private Function ClampDouble(ByVal dValue As Double, ByVal dMin As Double, ByVal dMax As Double) As Double
+    If dValue < dMin Then dValue = dMin
+    If dValue > dMax Then dValue = dMax
+    ClampDouble = dValue
+End Function
+
+Private Function ClampLong(ByVal lValue As Long, ByVal lMin As Long, ByVal lMax As Long) As Long
+    If lValue < lMin Then lValue = lMin
+    If lValue > lMax Then lValue = lMax
+    ClampLong = lValue
+End Function
+
+Private Function GetSavedTemperature() As Double
+    On Error GoTo UseDefault
+    GetSavedTemperature = ClampDouble(CDbl(GetSetting(SETTINGS_APP, SETTINGS_SECTION, "Temperature", CStr(DEFAULT_TEMPERATURE))), 0, 2)
+    Exit Function
+UseDefault:
+    GetSavedTemperature = DEFAULT_TEMPERATURE
+End Function
+
+Private Function GetSavedMaxTokens() As Long
+    On Error GoTo UseDefault
+    GetSavedMaxTokens = ClampLong(CLng(GetSetting(SETTINGS_APP, SETTINGS_SECTION, "MaxTokens", CStr(DEFAULT_MAX_TOKENS))), 1, 1048576)
+    Exit Function
+UseDefault:
+    GetSavedMaxTokens = DEFAULT_MAX_TOKENS
+End Function
+
+Private Function GetSavedTimeoutSeconds() As Long
+    On Error GoTo UseDefault
+    GetSavedTimeoutSeconds = ClampLong(CLng(GetSetting(SETTINGS_APP, SETTINGS_SECTION, "TimeoutSeconds", CStr(DEFAULT_TIMEOUT_SECONDS))), 15, 1800)
+    Exit Function
+UseDefault:
+    GetSavedTimeoutSeconds = DEFAULT_TIMEOUT_SECONDS
+End Function
+
+Private Sub GetModelParametersFromForm(frm As Form, ByRef dTemperature As Double, _
+                                       ByRef lMaxTokens As Long, ByRef lTimeoutSeconds As Long)
+    On Error GoTo UseSaved
+    dTemperature = ClampDouble(CDbl(Nz(frm!txtTemperature, DEFAULT_TEMPERATURE)), 0, 2)
+    lMaxTokens = ClampLong(CLng(Nz(frm!txtMaxTokens, DEFAULT_MAX_TOKENS)), 1, 1048576)
+    lTimeoutSeconds = ClampLong(CLng(Nz(frm!txtTimeoutSeconds, DEFAULT_TIMEOUT_SECONDS)), 15, 1800)
+    SaveSetting SETTINGS_APP, SETTINGS_SECTION, "Temperature", CStr(dTemperature)
+    SaveSetting SETTINGS_APP, SETTINGS_SECTION, "MaxTokens", CStr(lMaxTokens)
+    SaveSetting SETTINGS_APP, SETTINGS_SECTION, "TimeoutSeconds", CStr(lTimeoutSeconds)
+    Exit Sub
+UseSaved:
+    Err.Clear
+    dTemperature = GetSavedTemperature()
+    lMaxTokens = GetSavedMaxTokens()
+    lTimeoutSeconds = GetSavedTimeoutSeconds()
+End Sub
 
 '====================================================
 ' 方案A: WebBrowser HTML 对话窗口渲染
@@ -952,13 +1085,25 @@ Private Function BuildWebChatBody(ByVal frm As Form) As String
             sRole = CStr(m_colHistory(i)("role"))
             sContent = CStr(m_colHistory(i)("content"))
             If sRole = "user" Or sRole = "assistant" Then
-                sBody = sBody & BuildWebBubble(sRole, sContent)
+                If sRole = "assistant" And i = m_colHistory.Count And _
+                   sContent = m_sLastAnswer And m_bShowReasoning And Len(m_sLastReasoning) > 0 Then
+                    sBody = sBody & BuildWebBubble(sRole, "思考过程" & vbCrLf & m_sLastReasoning & _
+                        vbCrLf & vbCrLf & "最终答案" & vbCrLf & sContent)
+                Else
+                    sBody = sBody & BuildWebBubble(sRole, sContent)
+                End If
             End If
         Next i
     End If
 
-    If Len(m_sStreamingAnswer) > 0 Then
-        sBody = sBody & BuildWebBubble("assistant", m_sStreamingAnswer, (Len(m_sLastAnswer) = 0))
+    If Len(m_sStreamingAnswer) > 0 Or (Len(m_sStreamingReasoning) > 0 And Len(m_sLastAnswer) = 0) Then
+        Dim sStreamingDisplay As String
+        If m_bShowReasoning And Len(m_sStreamingReasoning) > 0 Then
+            sStreamingDisplay = "思考过程" & vbCrLf & m_sStreamingReasoning & vbCrLf & vbCrLf
+            If Len(m_sStreamingAnswer) > 0 Then sStreamingDisplay = sStreamingDisplay & "最终答案" & vbCrLf
+        End If
+        sStreamingDisplay = sStreamingDisplay & m_sStreamingAnswer
+        sBody = sBody & BuildWebBubble("assistant", sStreamingDisplay, (Len(m_sLastAnswer) = 0))
     End If
 
     If Len(sBody) = 0 Then
@@ -1342,7 +1487,10 @@ Private Sub EnsureHistoryTable()
             Exit For
         End If
     Next tbl
-    If bExists Then Exit Sub
+    If bExists Then
+        EnsureSessionTable
+        Exit Sub
+    End If
 
     ' 创建表
     Set td = db.CreateTableDef(HISTORY_TABLE)
@@ -1371,6 +1519,53 @@ Private Sub EnsureHistoryTable()
     td.Indexes.Append idx
 
     db.TableDefs.Refresh
+    EnsureSessionTable
+End Sub
+
+Private Sub EnsureSessionTable()
+    On Error GoTo ErrHandler
+    Dim db As DAO.Database
+    Dim td As DAO.TableDef
+    Dim idx As DAO.Index
+    Dim tbl As AccessObject
+    For Each tbl In CurrentData.AllTables
+        If tbl.Name = SESSION_TABLE Then Exit Sub
+    Next tbl
+
+    Set db = CurrentDb
+    Set td = db.CreateTableDef(SESSION_TABLE)
+    td.Fields.Append td.CreateField("SessionID", dbText, 50)
+    td.Fields.Append td.CreateField("Title", dbText, 255)
+    td.Fields.Append td.CreateField("UpdatedAt", dbDate)
+    db.TableDefs.Append td
+    Set idx = td.CreateIndex("PrimaryKey")
+    idx.Primary = True
+    idx.Fields.Append idx.CreateField("SessionID")
+    td.Indexes.Append idx
+    db.TableDefs.Refresh
+    Exit Sub
+ErrHandler:
+    If Err.Number <> 3010 Then Err.Raise Err.Number, Err.Source, Err.Description
+End Sub
+
+Private Sub TouchSessionMetadata(ByVal sSessionId As String, ByVal sDefaultTitle As String)
+    On Error Resume Next
+    EnsureSessionTable
+    Dim db As DAO.Database
+    Dim rs As DAO.Recordset
+    Set db = CurrentDb
+    Set rs = db.OpenRecordset("SELECT * FROM " & SESSION_TABLE & _
+                              " WHERE SessionID='" & Replace(sSessionId, "'", "''") & "'", dbOpenDynaset)
+    If rs.EOF Then
+        rs.AddNew
+        rs!SessionID = sSessionId
+        rs!Title = Left$(Trim$(Replace(Replace(sDefaultTitle, vbCr, " "), vbLf, " ")), 255)
+    Else
+        rs.Edit
+    End If
+    rs!UpdatedAt = Now
+    rs.Update
+    rs.Close
 End Sub
 
 '====================================================
@@ -1402,6 +1597,7 @@ Private Sub SaveMessageToDb(ByVal sSessionId As String, _
     rs!CreatedAt = Now
     rs.Update
     rs.Close
+    TouchSessionMetadata sSessionId, IIf(sRole = "user", sContent, "新对话")
     Set rs = Nothing
 End Sub
 
@@ -1410,6 +1606,15 @@ End Sub
 '====================================================
 Public Function btnAsk_Click()
     Askai
+End Function
+
+Public Function btnCancelRequest_Click()
+    m_bCancelRequested = True
+    On Error Resume Next
+    If m_lCurlProcessId > 0 Then
+        CreateObject("WScript.Shell").Run "taskkill /PID " & CStr(m_lCurlProcessId) & " /T /F", 0, True
+    End If
+    If Not Screen.ActiveForm Is Nothing Then SetStatus Screen.ActiveForm, "正在取消请求..."
 End Function
 
 '====================================================
@@ -1421,9 +1626,35 @@ Public Function btnNewChat_Click()
     Set frm = Screen.ActiveForm
     frm!txtAnswer.TextFormat = acTextFormatHTMLRichText
     frm!txtAnswer.Value = ""
+    UpdateReasoningToggle frm
     RefreshAlternateChatView frm
-    SetStatus frm, "已开始新对话。选择模型，输入问题后点击发送"
+    SetStatus frm, "已开始新对话。"
 End Function
+
+Public Function btnToggleReasoning_Click()
+    Dim frm As Form
+    Set frm = Screen.ActiveForm
+    If Len(m_sLastReasoning) = 0 And Len(m_sStreamingReasoning) = 0 Then Exit Function
+    m_bShowReasoning = Not m_bShowReasoning
+    If m_colHistory.Count > 0 And m_colHistory(m_colHistory.Count)("role") = "assistant" Then
+        RebuildChatHtmlFromHistory
+        frm!txtAnswer.Value = m_sChatHtml
+    Else
+        frm!txtAnswer.Value = m_sChatHtml & BuildAiStreamingBubbleHtml(m_sStreamingAnswer, True, m_sStreamingReasoning)
+    End If
+    UpdateReasoningToggle frm
+    RefreshAlternateChatView frm
+End Function
+
+Private Sub UpdateReasoningToggle(frm As Form)
+    If Not HasControl(frm, "btnToggleReasoning") Then Exit Sub
+    frm!btnToggleReasoning.Visible = (Len(m_sLastReasoning) > 0 Or Len(m_sStreamingReasoning) > 0)
+    If m_bShowReasoning Then
+        frm!btnToggleReasoning.Caption = "收起思考"
+    Else
+        frm!btnToggleReasoning.Caption = "查看思考"
+    End If
+End Sub
 
 '====================================================
 ' 模型切换事件: 显示/隐藏自定义端点字段
@@ -1432,6 +1663,11 @@ Public Function cboProvider_AfterUpdate()
     On Error Resume Next
     Dim frm As Form
     Set frm = Screen.ActiveForm
+    If frm.Name <> MODEL_SETTINGS_FORM Then
+        SaveSetting SETTINGS_APP, SETTINGS_SECTION, "Provider", Nz(frm!cboProvider, "DeepSeek Pro")
+        RefreshChatSelections
+        Exit Function
+    End If
     Dim bCustom As Boolean
     bCustom = (Nz(frm!cboProvider, "") = "自定义")
     frm!rectCustomBg.Visible = bCustom
@@ -1441,6 +1677,7 @@ Public Function cboProvider_AfterUpdate()
     frm!txtCustomKey.Visible = bCustom
     frm!lblCustomModel.Visible = bCustom
     frm!txtCustomModel.Visible = bCustom
+    frm!lblCustomModel.Caption = "模型"
 End Function
 
 '====================================================
@@ -1458,7 +1695,7 @@ Public Function cboPromptTemplate_AfterUpdate()
     Dim frm As Form
     Set frm = Screen.ActiveForm
     frm!txtSystemPrompt.Value = GetPromptTemplateText(Nz(frm!cboPromptTemplate, "通用助手"))
-    SaveSystemPrompt CStr(frm!txtSystemPrompt.Value)
+    If frm.Name <> MODEL_SETTINGS_FORM Then SaveSystemPrompt CStr(frm!txtSystemPrompt.Value)
 End Function
 
 Public Function cboDataPreset_AfterUpdate()
@@ -1476,7 +1713,9 @@ Public Function btnAttachDocument_Click()
     Dim sContent As String
     Dim sQuestion As String
     Dim bTruncated As Boolean
-    Set frm = Screen.ActiveForm
+    Dim frmSource As Form
+    Set frmSource = Screen.ActiveForm
+    Set frm = DataToolChatForm(frmSource)
 
     Set oDialog = Application.FileDialog(3)
     With oDialog
@@ -1514,6 +1753,7 @@ Public Function btnAttachDocument_Click()
     Else
         SetStatus frm, "文档已加载: " & Dir$(sPath)
     End If
+    ReturnFromDataTools frmSource, frm
     Exit Function
 ErrHandler:
     MsgBox "读取文档失败: " & Err.Description, vbExclamation
@@ -1523,11 +1763,24 @@ End Function
 ' 思考强度变更事件: 保存配置
 '====================================================
 Public Function cboReasoningEffort_AfterUpdate()
-    On Error Resume Next
     Dim frm As Form
     Set frm = Screen.ActiveForm
+    If frm.Name = MODEL_SETTINGS_FORM Then Exit Function
     SaveReasoningEffort Nz(frm!cboReasoningEffort, "默认")
+    RefreshChatSelections
 End Function
+
+Private Sub RefreshChatSelections()
+    Dim frm As Form
+    Dim sProvider As String
+    sProvider = GetSetting(SETTINGS_APP, SETTINGS_SECTION, "Provider", "DeepSeek Pro")
+    For Each frm In Forms
+        If frm.Name = AI_FORM Or frm.Name = AI_WEB_FORM Then
+            If HasControl(frm, "cboProvider") Then frm!cboProvider.Value = sProvider
+            If HasControl(frm, "cboReasoningEffort") Then frm!cboReasoningEffort.Value = GetSavedReasoningEffort()
+        End If
+    Next frm
+End Sub
 
 '====================================================
 ' 数据对象下拉框获取焦点: 刷新表/查询列表
@@ -1546,10 +1799,12 @@ End Function
 Public Function btnAnalyzeData_Click()
     On Error GoTo ErrHandler
     Dim frm As Form
-    Set frm = Screen.ActiveForm
+    Dim frmSource As Form
+    Set frmSource = Screen.ActiveForm
+    Set frm = DataToolChatForm(frmSource)
 
     Dim sDisplayName As String
-    sDisplayName = Nz(frm!cboDbObject, "")
+    sDisplayName = Nz(frmSource!cboDbObject, "")
     If Len(Trim$(sDisplayName)) = 0 Then
         MsgBox "请先选择一个表或查询。", vbInformation
         Exit Function
@@ -1558,7 +1813,7 @@ Public Function btnAnalyzeData_Click()
     Dim sQuestion As String
     sQuestion = Trim$(Nz(frm!txtQ, ""))
     If Len(sQuestion) = 0 Then
-        sQuestion = GetDataPresetQuestion(Nz(frm!cboDataPreset, "综合质量"))
+        sQuestion = GetDataPresetQuestion(Nz(frmSource!cboDataPreset, "综合质量"))
     End If
 
     frm!lblMsg.Caption = "正在读取数据库对象..."
@@ -1576,6 +1831,7 @@ Public Function btnAnalyzeData_Click()
     frm!txtQ.Value = sQuestion & vbCrLf & vbCrLf & _
                      "下面是当前 Access 数据库对象的结构和样例数据，请基于这些内容分析，不要假设未提供的数据。" & vbCrLf & vbCrLf & _
                      sContext
+    ReturnFromDataTools frmSource, frm
     Askai
     Exit Function
 
@@ -1652,8 +1908,10 @@ Public Function btnGenerateSql_Click()
     Dim sRequirement As String
     Dim sContext As String
     Dim sSql As String
-    Set frm = Screen.ActiveForm
-    sDisplayName = Nz(frm!cboDbObject, "")
+    Dim frmSource As Form
+    Set frmSource = Screen.ActiveForm
+    Set frm = DataToolChatForm(frmSource)
+    sDisplayName = Nz(frmSource!cboDbObject, "")
     If Len(Trim$(sDisplayName)) = 0 Then
         MsgBox "请先选择一个表或查询。", vbInformation
         Exit Function
@@ -1667,6 +1925,7 @@ Public Function btnGenerateSql_Click()
     End If
     frm!txtQ.Value = "请根据以下需求生成一条 Microsoft Access SQL。只允许输出一条 SQL，并将最终 SQL 放在 ```sql 代码块中；不要使用数据库中未提供的表或字段。" & _
         vbCrLf & vbCrLf & "需求: " & sRequirement & vbCrLf & vbCrLf & sContext
+    ReturnFromDataTools frmSource, frm
     Askai
     sSql = ExtractSqlCodeBlock(m_sLastAnswer)
     If Len(sSql) = 0 Then
@@ -1751,6 +2010,93 @@ Public Function btnApiSettings_Click()
     ConfigureApiKeys
 End Function
 
+Public Function btnModelSettings_Click()
+    ConfigureModelParameters
+End Function
+
+Public Function btnDataTools_Click()
+    On Error GoTo Failed
+    Dim sChatForm As String
+    sChatForm = Screen.ActiveForm.Name
+    If Not FormExists(DATA_TOOLS_FORM) Then CreateDataToolsForm
+    DoCmd.OpenForm DATA_TOOLS_FORM, acNormal, , , , , sChatForm
+    Forms(DATA_TOOLS_FORM)!cboDbObject.RowSource = GetDbObjectRowSource()
+    Exit Function
+Failed:
+    MsgBox "打开工具失败: " & Err.Description, vbExclamation
+End Function
+
+Private Function DataToolChatForm(frmSource As Form) As Form
+    Dim sChatForm As String
+    If frmSource.Name = DATA_TOOLS_FORM Then
+        sChatForm = Nz(frmSource.OpenArgs, "")
+        If sChatForm <> AI_FORM And sChatForm <> AI_WEB_FORM Then
+            Err.Raise vbObjectError + 2100, "DataToolChatForm", "请从聊天窗体打开工具。"
+        End If
+        Set DataToolChatForm = Forms(sChatForm)
+    Else
+        Set DataToolChatForm = frmSource
+    End If
+End Function
+
+Private Sub ReturnFromDataTools(frmSource As Form, frmChat As Form)
+    If frmSource.Name = DATA_TOOLS_FORM Then
+        DoCmd.Close acForm, DATA_TOOLS_FORM, acSaveNo
+        frmChat.SetFocus
+    End If
+End Sub
+
+Public Function btnSaveModelSettings_Click()
+    On Error GoTo InvalidValue
+    Dim frm As Form
+    Dim dTemperature As Double
+    Dim lMaxTokens As Long
+    Dim lTimeoutSeconds As Long
+    Set frm = Forms(MODEL_SETTINGS_FORM)
+    Dim sProvider As String
+    Dim sCustomKey As String
+    sProvider = Trim$(Nz(frm!cboProvider, ""))
+    sCustomKey = Trim$(Nz(frm!txtCustomKey, ""))
+    If Len(sProvider) = 0 Then GoTo InvalidValue
+    dTemperature = CDbl(frm!txtTemperature)
+    lMaxTokens = CLng(frm!txtMaxTokens)
+    lTimeoutSeconds = CLng(frm!txtTimeoutSeconds)
+    If dTemperature < 0 Or dTemperature > 2 Or _
+    lMaxTokens < 1 Or lMaxTokens > 1048576 Or _
+       lTimeoutSeconds < 15 Or lTimeoutSeconds > 1800 Then GoTo InvalidValue
+    If sProvider = "自定义" Then
+        If Len(Trim$(Nz(frm!txtCustomUrl, ""))) = 0 Or Len(Trim$(Nz(frm!txtCustomModel, ""))) = 0 Then
+            MsgBox "请填写自定义 URL 和模型名称。", vbInformation
+            Exit Function
+        End If
+        If Len(sCustomKey) = 0 And Len(GetProviderApiKey("自定义")) = 0 Then
+            MsgBox "请填写自定义 API Key。", vbInformation
+            Exit Function
+        End If
+    End If
+    If Len(sCustomKey) > 0 Then
+        If Not SaveProviderApiKey("自定义", sCustomKey) Then
+            MsgBox "自定义 API Key 加密保存失败，配置未保存。", vbExclamation
+            Exit Function
+        End If
+    End If
+    SaveSetting SETTINGS_APP, SETTINGS_SECTION, "Provider", sProvider
+    SaveSetting SETTINGS_APP, SETTINGS_SECTION, "CustomUrl", Trim$(Nz(frm!txtCustomUrl, ""))
+    SaveSetting SETTINGS_APP, SETTINGS_SECTION, "CustomModel", Trim$(Nz(frm!txtCustomModel, ""))
+    SaveSetting SETTINGS_APP, SETTINGS_SECTION, "PromptTemplate", Nz(frm!cboPromptTemplate, "通用助手")
+    SaveSystemPrompt Trim$(Nz(frm!txtSystemPrompt, ""))
+    SaveReasoningEffort Nz(frm!cboReasoningEffort, "默认")
+    SaveSetting SETTINGS_APP, SETTINGS_SECTION, "Temperature", CStr(dTemperature)
+    SaveSetting SETTINGS_APP, SETTINGS_SECTION, "MaxTokens", CStr(lMaxTokens)
+    SaveSetting SETTINGS_APP, SETTINGS_SECTION, "TimeoutSeconds", CStr(lTimeoutSeconds)
+    RefreshChatSelections
+    MsgBox "模型配置已保存，将从下一次请求开始生效。", vbInformation
+    DoCmd.Close acForm, MODEL_SETTINGS_FORM, acSaveNo
+    Exit Function
+InvalidValue:
+    MsgBox "请输入有效参数：温度 0-2，最大 Token 1-1048576，超时 15-1800 秒。", vbExclamation
+End Function
+
 Public Function cboApiProvider_AfterUpdate()
     On Error Resume Next
     Dim frm As Form
@@ -1822,9 +2168,19 @@ Public Sub ShowChatHistory()
     End If
     rs.Close
 
-    If Not FormExists(HISTORY_FORM) Then
-        CreateHistoryForm
+    Dim bRebuildHistoryForm As Boolean
+    If FormExists(HISTORY_FORM) Then
+        If IsFormLoaded(HISTORY_FORM) Then
+            bRebuildHistoryForm = Not HasControl(Forms(HISTORY_FORM), "txtHistorySearch")
+        Else
+            DoCmd.OpenForm HISTORY_FORM, acDesign
+            bRebuildHistoryForm = Not HasControl(Forms(HISTORY_FORM), "txtHistorySearch")
+            DoCmd.Close acForm, HISTORY_FORM, acSaveNo
+        End If
+    Else
+        bRebuildHistoryForm = True
     End If
+    If bRebuildHistoryForm Then CreateHistoryForm
 
     DoCmd.OpenForm HISTORY_FORM, acNormal
     RefreshSessionList
@@ -1847,10 +2203,25 @@ Private Sub RefreshSessionList()
     Set db = CurrentDb
 
     Dim sSQL As String
-    sSQL = "SELECT TOP 50 t1.SessionID, t1.CreatedAt, t1.Provider, Left(t1.Content, 50) AS Preview " & _
+        Dim sSearch As String
+        sSearch = Trim$(Nz(frm!txtHistorySearch, ""))
+        sSQL = "SELECT TOP 50 t1.SessionID, t1.CreatedAt, t1.Provider, Left(t1.Content, 50) AS Preview, " & _
+            "Nz(m.Title,'') AS SessionTitle " & _
            "FROM " & HISTORY_TABLE & " AS t1 " & _
+            "LEFT JOIN " & SESSION_TABLE & " AS m ON t1.SessionID=m.SessionID " & _
            "WHERE t1.Role='user' AND t1.ID = " & _
-           "(SELECT MIN(t2.ID) FROM " & HISTORY_TABLE & " AS t2 WHERE t2.SessionID = t1.SessionID) " & _
+            "(SELECT MIN(t2.ID) FROM " & HISTORY_TABLE & " AS t2 WHERE t2.SessionID = t1.SessionID) "
+        If Len(sSearch) > 0 Then
+            sSearch = Replace(sSearch, "[", "[[]")
+            sSearch = Replace(sSearch, "*", "[*]")
+            sSearch = Replace(sSearch, "?", "[?]")
+            sSearch = Replace(sSearch, "#", "[#]")
+            sSearch = Replace(sSearch, "'", "''")
+         sSQL = sSQL & "AND (Nz(m.Title,'') Like '*" & sSearch & "*' OR EXISTS " & _
+             "(SELECT * FROM " & HISTORY_TABLE & " AS hs WHERE hs.SessionID=t1.SessionID " & _
+             "AND hs.Content Like '*" & sSearch & "*')) "
+        End If
+        sSQL = sSQL & _
            "ORDER BY t1.CreatedAt DESC"
     Set rs = db.OpenRecordset(sSQL, dbOpenSnapshot)
 
@@ -1859,7 +2230,7 @@ Private Sub RefreshSessionList()
     Do While Not rs.EOF
         Dim sDisplay As String
         sDisplay = Format(rs!CreatedAt, "yyyy/mm/dd hh:nn") & " [" & Nz(rs!Provider, "") & "] " & _
-                   Nz(rs!Preview, "")
+               IIf(Len(Nz(rs!SessionTitle, "")) > 0, Nz(rs!SessionTitle, ""), Nz(rs!Preview, ""))
         sDisplay = Replace(sDisplay, """", "'")
         sDisplay = Replace(sDisplay, ";", ",")
         sDisplay = Replace(Replace(Replace(sDisplay, vbCrLf, " "), vbCr, " "), vbLf, " ")
@@ -1871,6 +2242,116 @@ Private Sub RefreshSessionList()
 
     frm!cboSession.RowSource = sValueList
     frm!cboSession.Requery
+End Sub
+
+Public Function btnSearchHistory_Click()
+    RefreshSessionList
+End Function
+
+Public Function btnClearHistorySearch_Click()
+    On Error Resume Next
+    Forms(HISTORY_FORM)!txtHistorySearch.Value = ""
+    RefreshSessionList
+End Function
+
+Public Function btnRenameSession_Click()
+    On Error GoTo ErrHandler
+    Dim frm As Form
+    Dim sSessId As String
+    Dim sCurrentTitle As String
+    Dim sNewTitle As String
+    Set frm = Forms(HISTORY_FORM)
+    sSessId = Nz(frm!cboSession, "")
+    If Len(sSessId) = 0 Then
+        MsgBox "请先选择一个会话。", vbInformation
+        Exit Function
+    End If
+    sCurrentTitle = Nz(DLookup("Title", SESSION_TABLE, "SessionID='" & Replace(sSessId, "'", "''") & "'"), "")
+    sNewTitle = Trim$(InputBox("请输入新的会话名称：", "重命名会话", sCurrentTitle))
+    If Len(sNewTitle) = 0 Then Exit Function
+    RenameChatSession sSessId, sNewTitle
+    RefreshSessionList
+    frm!cboSession.Value = sSessId
+    Exit Function
+ErrHandler:
+    MsgBox "重命名失败: " & Err.Description, vbExclamation
+End Function
+
+Public Sub RenameChatSession(ByVal sSessionId As String, ByVal sNewTitle As String)
+    If Len(Trim$(sSessionId)) = 0 Or Len(Trim$(sNewTitle)) = 0 Then _
+        Err.Raise 5, "RenameChatSession", "会话 ID 和新名称不能为空。"
+    EnsureHistoryTable
+    TouchSessionMetadata sSessionId, sNewTitle
+    CurrentDb.Execute "UPDATE " & SESSION_TABLE & " SET Title='" & _
+                      Replace(Left$(Trim$(sNewTitle), 255), "'", "''") & "', UpdatedAt=Now() " & _
+                      "WHERE SessionID='" & Replace(sSessionId, "'", "''") & "'", dbFailOnError
+End Sub
+
+Private Function BuildSessionMarkdown(ByVal sSessionId As String) As String
+    Dim rs As DAO.Recordset
+    Dim sOut As String
+    Dim sTitle As String
+    sTitle = Nz(DLookup("Title", SESSION_TABLE, "SessionID='" & Replace(sSessionId, "'", "''") & "'"), "对话记录")
+    sOut = "# " & sTitle & vbCrLf & vbCrLf
+    Set rs = CurrentDb.OpenRecordset("SELECT Role, Content, CreatedAt FROM " & HISTORY_TABLE & _
+                                     " WHERE SessionID='" & Replace(sSessionId, "'", "''") & _
+                                     "' ORDER BY ID", dbOpenSnapshot)
+    Do While Not rs.EOF
+        If rs!Role = "user" Then
+            sOut = sOut & "## 用户 · " & Format$(rs!CreatedAt, "yyyy-mm-dd hh:nn:ss") & vbCrLf & vbCrLf
+        Else
+            sOut = sOut & "## AI 回答" & vbCrLf & vbCrLf
+        End If
+        sOut = sOut & Nz(rs!Content, "") & vbCrLf & vbCrLf
+        rs.MoveNext
+    Loop
+    rs.Close
+    BuildSessionMarkdown = sOut
+End Function
+
+Public Function btnExportSession_Click()
+    On Error GoTo ErrHandler
+    Dim frm As Form
+    Dim sSessId As String
+    Dim sFormat As String
+    Dim sPath As String
+    Dim sMarkdown As String
+    Dim oDialog As Object
+    Set frm = Forms(HISTORY_FORM)
+    sSessId = Nz(frm!cboSession, "")
+    If Len(sSessId) = 0 Then
+        MsgBox "请先选择一个会话。", vbInformation
+        Exit Function
+    End If
+    sFormat = UCase$(Trim$(InputBox("输入导出格式：MD 或 HTML", "导出会话", "MD")))
+    If sFormat <> "MD" And sFormat <> "HTML" Then Exit Function
+    Set oDialog = Application.FileDialog(2)
+    oDialog.Title = "导出对话"
+    oDialog.InitialFileName = "AccessAI_" & sSessId & IIf(sFormat = "HTML", ".html", ".md")
+    If oDialog.Show <> -1 Then Exit Function
+    sPath = oDialog.SelectedItems(1)
+    ExportChatSession sSessId, sPath, sFormat
+    MsgBox "对话已导出到：" & vbCrLf & sPath, vbInformation
+    Exit Function
+ErrHandler:
+    MsgBox "导出失败: " & Err.Description, vbExclamation
+End Function
+
+Public Sub ExportChatSession(ByVal sSessionId As String, ByVal sPath As String, _
+                             Optional ByVal sFormat As String = "MD")
+    Dim sMarkdown As String
+    If Len(Trim$(sSessionId)) = 0 Or Len(Trim$(sPath)) = 0 Then _
+        Err.Raise 5, "ExportChatSession", "会话 ID 和导出路径不能为空。"
+    sFormat = UCase$(Trim$(sFormat))
+    If sFormat <> "MD" And sFormat <> "HTML" Then _
+        Err.Raise 5, "ExportChatSession", "导出格式必须为 MD 或 HTML。"
+    EnsureHistoryTable
+    sMarkdown = BuildSessionMarkdown(sSessionId)
+    If sFormat = "HTML" Then
+        WriteUTF8NoBom sPath, BuildWebChatDocument(MarkdownToRichText(sMarkdown, True))
+    Else
+        WriteUTF8NoBom sPath, sMarkdown
+    End If
 End Sub
 
 '====================================================
@@ -1965,6 +2446,11 @@ Public Function btnLoadSession_Click()
     DoCmd.OpenForm sTargetForm, acNormal
     Dim frmAI As Form
     Set frmAI = Forms(sTargetForm)
+    m_sLastReasoning = ""
+    m_sStreamingReasoning = ""
+    m_sStreamingAnswer = ""
+    m_bShowReasoning = False
+    UpdateReasoningToggle frmAI
     RebuildChatHtmlFromHistory
     frmAI!txtAnswer.TextFormat = acTextFormatHTMLRichText
     frmAI!txtAnswer.Value = m_sChatHtml
@@ -2000,6 +2486,8 @@ Public Function btnDeleteSession_Click()
     Set db = CurrentDb
     db.Execute "DELETE FROM " & HISTORY_TABLE & _
                " WHERE SessionID='" & Replace(sSessId, "'", "''") & "'"
+    db.Execute "DELETE FROM " & SESSION_TABLE & _
+               " WHERE SessionID='" & Replace(sSessId, "'", "''") & "'"
 
     frm!cboSession.Value = Null
     frm!txtHistoryDetail.TextFormat = acTextFormatPlain
@@ -2024,9 +2512,8 @@ Public Sub Askai()
 
     ' 获取选择的 AI 提供商
     Dim sProvider As String
-    On Error Resume Next
-    sProvider = Nz(frm!cboProvider, "DeepSeek Pro")
-    On Error GoTo 0
+    sProvider = GetSetting(SETTINGS_APP, SETTINGS_SECTION, "Provider", "DeepSeek Pro")
+    If HasControl(frm, "cboProvider") Then sProvider = Nz(frm!cboProvider, sProvider)
 
     Dim sUrl As String, sKey As String, sModel As String
     GetProviderConfig sProvider, sUrl, sKey, sModel
@@ -2049,6 +2536,12 @@ Public Sub Askai()
     Dim sReasoningEffort As String
     sReasoningEffort = GetReasoningEffortFromForm(frm)
 
+    Dim dTemperature As Double
+    Dim lMaxTokens As Long
+    Dim lTimeoutSeconds As Long
+    GetModelParametersFromForm frm, dTemperature, lMaxTokens, lTimeoutSeconds
+    m_bCancelRequested = False
+
     ' 初始化并添加用户消息到历史
     InitHistory
 
@@ -2061,7 +2554,11 @@ Public Sub Askai()
     oUserMsg.Add "content", sQuestion
     m_colHistory.Add oUserMsg
     m_sLastAnswer = ""
+    m_sLastReasoning = ""
+    m_bShowReasoning = False
     m_sStreamingAnswer = ""
+    m_sStreamingReasoning = ""
+    UpdateReasoningToggle frm
     ResetTokenStats
     UpdateTokenStatsView frm
 
@@ -2073,9 +2570,11 @@ Public Sub Askai()
 
     ' curl.exe 从 Windows 10 1803 开始内置
     If Dir(Environ$("SystemRoot") & "\System32\curl.exe") <> "" Then
-        StreamWithCurl frm, sQuestion, sUrl, sKey, sModel, sSystemPrompt, sReasoningEffort
+        StreamWithCurl frm, sQuestion, sUrl, sKey, sModel, sSystemPrompt, sReasoningEffort, _
+                       dTemperature, lMaxTokens, lTimeoutSeconds
     Else
-        SyncWithTypewriter frm, sQuestion, sUrl, sKey, sModel, sSystemPrompt, sReasoningEffort
+        SyncWithTypewriter frm, sQuestion, sUrl, sKey, sModel, sSystemPrompt, sReasoningEffort, _
+                           dTemperature, lMaxTokens, lTimeoutSeconds
     End If
 
     ' 添加助手回复到历史
@@ -2086,18 +2585,20 @@ Public Sub Askai()
         oAsstMsg.Add "content", m_sLastAnswer
         m_colHistory.Add oAsstMsg
         m_sStreamingAnswer = ""
+        m_sStreamingReasoning = ""
 
         ' AI 回复写回历史后重新渲染整段对话, 保证第一轮及后续内容不丢
         RebuildChatHtmlFromHistory
         frm!txtAnswer.TextFormat = acTextFormatHTMLRichText
         frm!txtAnswer.Value = m_sChatHtml
+        UpdateReasoningToggle frm
         ScrollAnswerToEnd frm
     End If
 
     ' 保存到数据库
     If Len(m_sLastAnswer) > 0 Then
         Dim sProviderSave As String
-        sProviderSave = Nz(frm!cboProvider, "DeepSeek Pro")
+        sProviderSave = sProvider
         SaveMessageToDb m_sSessionId, sProviderSave, "user", sQuestion
         SaveMessageToDb m_sSessionId, sProviderSave, "assistant", m_sLastAnswer
     End If
@@ -2131,7 +2632,8 @@ End Sub
 Private Sub StreamWithCurl(frm As Form, ByVal sQuestion As String, _
                            ByVal sUrl As String, ByVal sKey As String, _
                            ByVal sModel As String, ByVal sSystemPrompt As String, _
-                           ByVal sReasoningEffort As String)
+                           ByVal sReasoningEffort As String, ByVal dTemperature As Double, _
+                           ByVal lMaxTokens As Long, ByVal lTimeoutSeconds As Long)
     On Error GoTo ErrHandler
     m_sLastStreamError = vbNullString
 
@@ -2156,7 +2658,8 @@ Private Sub StreamWithCurl(frm As Form, ByVal sQuestion As String, _
     sErrorStage = "构建请求体"
     Dim sBody As String
     Dim lEstimatedPromptTokens As Long
-    sBody = BuildRequestBody(sQuestion, sModel, True, m_colHistory, sSystemPrompt, sReasoningEffort)
+    sBody = BuildRequestBody(sQuestion, sModel, True, m_colHistory, sSystemPrompt, _
+                             sReasoningEffort, dTemperature, lMaxTokens)
     lEstimatedPromptTokens = EstimatePromptTokens(m_colHistory, sSystemPrompt)
 
     ' 写入请求体文件 (UTF-8 无 BOM)
@@ -2166,17 +2669,24 @@ Private Sub StreamWithCurl(frm As Form, ByVal sQuestion As String, _
     ' --- 启动 curl ---
     sErrorStage = "启动 curl"
     Dim sCurl As String
+    Dim sAuthHeader As String
+        If UsesApiKeyHeader(sUrl) Then
+            sAuthHeader = "api-key: " & sKey
+        Else
+            sAuthHeader = "Authorization: Bearer " & sKey
+        End If
         sCurl = """" & Environ$("SystemRoot") & "\System32\curl.exe"" " & _
-                "--http1.1 -sS -N --no-buffer --connect-timeout 10 --max-time 180 " & _
+            "--http1.1 -sS -N --no-buffer --connect-timeout 10 --max-time " & CStr(lTimeoutSeconds) & " " & _
+            "--retry 2 --retry-max-time " & CStr(lTimeoutSeconds) & " --retry-all-errors " & _
                 "-X POST """ & sUrl & """ " & _
                 "-H ""Content-Type: application/json; charset=utf-8"" " & _
-                "-H ""Authorization: Bearer " & sKey & """ " & _
+                "-H """ & sAuthHeader & """ " & _
                 "-H ""Accept: text/event-stream"" " & _
                 "--data-binary @""" & sTmpBody & """"
 
         Dim sCmd As String
         sCmd = "cmd /c (" & sCurl & " 1>""" & sTmpResp & """ 2>""" & sTmpErr & """) & echo done>""" & sTmpDone & """"
-        Shell sCmd, vbHide
+        m_lCurlProcessId = Shell(sCmd, vbHide)
 
     ' --- UI 初始化 ---
     sErrorStage = "初始化对话界面"
@@ -2189,6 +2699,7 @@ Private Sub StreamWithCurl(frm As Form, ByVal sQuestion As String, _
 
     ' --- 轮询响应文件 ---
     Dim sFullText As String     ' 累积的完整回答
+    Dim sFullReasoning As String ' 模型公开返回的思考内容
     Dim lLastRawLen As Long     ' 上次读到的原始文本长度
     Dim sngStart As Single      ' 开始时间
     Dim sngLastUI As Single     ' 上次 UI 刷新时间
@@ -2200,6 +2711,7 @@ Private Sub StreamWithCurl(frm As Form, ByVal sQuestion As String, _
     Dim sApiError As String
 
     sFullText = ""
+    sFullReasoning = ""
     lLastRawLen = 0
     sngStart = Timer
     sngLastUI = Timer
@@ -2210,6 +2722,10 @@ Private Sub StreamWithCurl(frm As Form, ByVal sQuestion As String, _
     Do
         sErrorStage = "轮询 SSE 响应: 等待"
         DoEvents
+        If m_bCancelRequested Then
+            SetStatus frm, "请求已取消。"
+            Exit Do
+        End If
         Sleep 80                ' 80ms 一轮
 
         ' 读取临时文件 (UTF-8)
@@ -2222,24 +2738,32 @@ Private Sub StreamWithCurl(frm As Form, ByVal sQuestion As String, _
 
             ' 重新解析全部 SSE 数据 (简单可靠, 不怕截断)
             Dim sNewFull As String
+            Dim sNewReasoning As String
             sErrorStage = "轮询 SSE 响应: 解析数据"
             sNewFull = ParseSSEChunk(sAll)
+            sNewReasoning = ParseSSEReasoning(sAll)
 
-            If Len(sNewFull) > Len(sFullText) Then
+            If Len(sNewFull) > Len(sFullText) Or Len(sNewReasoning) > Len(sFullReasoning) Then
                 sFullText = sNewFull
+                sFullReasoning = sNewReasoning
 
                 ' 首次收到内容
                 If Not bFirstToken Then
                     sErrorStage = "轮询 SSE 响应: 更新首次状态"
                     bFirstToken = True
                     DoCmd.Hourglass False
-                    frm!lblMsg.Caption = "正在输出..."
+                    If Len(sFullText) > 0 Then
+                        frm!lblMsg.Caption = "正在输出最终答案..."
+                    Else
+                        frm!lblMsg.Caption = "正在显示思考过程..."
+                    End If
                 End If
 
                 ' 更新显示 (流式气泡 + 光标)
                 sErrorStage = "轮询 SSE 响应: 刷新富文本"
                 m_sStreamingAnswer = sFullText
-                If Not TryShowStreamingAnswer(frm, sFullText) Then _
+                m_sStreamingReasoning = sFullReasoning
+                If Not TryShowStreamingAnswer(frm, sFullText, sFullReasoning) Then _
                     frm!lblMsg.Caption = "正在接收回答，暂缓富文本刷新..."
                 sngLastUI = Timer
             End If
@@ -2253,13 +2777,22 @@ Private Sub StreamWithCurl(frm As Form, ByVal sQuestion As String, _
         Dim sngElapsed As Single
         sngElapsed = Timer - sngStart
         If sngElapsed < 0 Then sngElapsed = sngElapsed + 86400  ' 跨午夜
-        If sngElapsed > 180 Then
+        If sngElapsed > lTimeoutSeconds Then
             If Not bTimedOut Then
                 bTimedOut = True
                 frm!lblMsg.Caption = "请求超时，正在关闭连接..."
             End If
         End If
     Loop
+
+    If m_bCancelRequested Then
+        DoCmd.Hourglass False
+        m_sLastAnswer = ""
+        m_sLastReasoning = ""
+        m_sStreamingAnswer = ""
+        m_sStreamingReasoning = ""
+        GoTo CleanUp
+    End If
 
     ' 完成标记由 cmd 在 curl 退出后写入，此时重定向文件句柄已释放。
     Sleep 50
@@ -2270,7 +2803,7 @@ Private Sub StreamWithCurl(frm As Form, ByVal sQuestion As String, _
         If Len(sErr) > 0 Then
             MsgBox "请求超时。curl 输出:" & vbCrLf & Left$(sErr, 1000), vbExclamation
         Else
-            MsgBox "请求超时 (180秒)。", vbExclamation
+            MsgBox "请求超时 (" & CStr(lTimeoutSeconds) & "秒)。", vbExclamation
         End If
     End If
 
@@ -2278,14 +2811,17 @@ Private Sub StreamWithCurl(frm As Form, ByVal sQuestion As String, _
     sErrorStage = "渲染最终回答"
     DoCmd.Hourglass False
     m_sLastAnswer = sFullText
+    m_sLastReasoning = sFullReasoning
     m_sStreamingAnswer = sFullText
-    If Len(sFullText) > 0 Then
+    m_sStreamingReasoning = sFullReasoning
+    UpdateReasoningToggle frm
+    If Len(sFullText) > 0 Or Len(sFullReasoning) > 0 Then
         If Not TryExtractUsageFromSSE(sAll) Then SetEstimatedTokenStats lEstimatedPromptTokens, sFullText
         ' 将本轮 AI 气泡固化到会话 HTML
-        m_sChatHtml = m_sChatHtml & BuildAiBubbleHtml(sFullText)
+        m_sChatHtml = m_sChatHtml & BuildAiResponseBubbleHtml(sFullReasoning, sFullText)
         frm!txtAnswer.TextFormat = acTextFormatHTMLRichText
         frm!txtAnswer.Value = m_sChatHtml
-        SetStatus frm, "回答完成。 (共 " & Len(sFullText) & " 字符)", True
+        SetStatus frm, "回答完成。 (答案 " & Len(sFullText) & " 字符，思考 " & Len(sFullReasoning) & " 字符)", True
         ScrollAnswerToEnd frm
     Else
         ' 可能是错误响应: 回退成纯文本显示错误, 不影响会话 HTML
@@ -2313,6 +2849,7 @@ Private Sub StreamWithCurl(frm As Form, ByVal sQuestion As String, _
     End If
     frm.Repaint
 
+CleanUp:
     ' 清理临时文件
     sErrorStage = "清理临时文件"
     On Error Resume Next
@@ -2320,6 +2857,7 @@ Private Sub StreamWithCurl(frm As Form, ByVal sQuestion As String, _
     Kill sTmpResp
     Kill sTmpErr
     Kill sTmpDone
+    m_lCurlProcessId = 0
     On Error GoTo 0
     Exit Sub
 
@@ -2351,12 +2889,14 @@ End Sub
 Private Sub SyncWithTypewriter(frm As Form, ByVal sQuestion As String, _
                                ByVal sUrl As String, ByVal sKey As String, _
                                ByVal sModel As String, ByVal sSystemPrompt As String, _
-                               ByVal sReasoningEffort As String)
+                               ByVal sReasoningEffort As String, ByVal dTemperature As Double, _
+                               ByVal lMaxTokens As Long, ByVal lTimeoutSeconds As Long)
     On Error GoTo ErrHandler
 
     Dim sBody As String
     Dim lEstimatedPromptTokens As Long
-    sBody = BuildRequestBody(sQuestion, sModel, False, m_colHistory, sSystemPrompt, sReasoningEffort)
+    sBody = BuildRequestBody(sQuestion, sModel, False, m_colHistory, sSystemPrompt, _
+                             sReasoningEffort, dTemperature, lMaxTokens)
     lEstimatedPromptTokens = EstimatePromptTokens(m_colHistory, sSystemPrompt)
 
     DoCmd.Hourglass True
@@ -2368,10 +2908,14 @@ Private Sub SyncWithTypewriter(frm As Form, ByVal sQuestion As String, _
 
     Dim xmlHttp As Object
     Set xmlHttp = CreateObject("MSXML2.ServerXMLHTTP.6.0")
-    xmlHttp.setTimeouts 5000, 10000, 30000, 180000
+    xmlHttp.setTimeouts 5000, 10000, 30000, lTimeoutSeconds * 1000
     xmlHttp.Open "POST", sUrl, False
     xmlHttp.setRequestHeader "Content-Type", "application/json; charset=utf-8"
-    xmlHttp.setRequestHeader "Authorization", "Bearer " & sKey
+    If UsesApiKeyHeader(sUrl) Then
+        xmlHttp.setRequestHeader "api-key", sKey
+    Else
+        xmlHttp.setRequestHeader "Authorization", "Bearer " & sKey
+    End If
     xmlHttp.send sBody
 
     If xmlHttp.Status <> 200 Then
@@ -2384,22 +2928,31 @@ Private Sub SyncWithTypewriter(frm As Form, ByVal sQuestion As String, _
     Dim oJson As Object
     Set oJson = JsonConverter.ParseJson(xmlHttp.responseText)
     Dim sAnswer As String
-    sAnswer = oJson("choices")(1)("message")("content")
+    Dim sReasoning As String
+    sAnswer = ExtractMessageField(oJson, "content")
+    sReasoning = ExtractMessageField(oJson, "reasoning_content")
+    If Len(sReasoning) = 0 Then sReasoning = ExtractMessageField(oJson, "reasoning")
     If Not TryExtractUsageFromJson(xmlHttp.responseText) Then SetEstimatedTokenStats lEstimatedPromptTokens, sAnswer
     m_sLastAnswer = sAnswer
+    m_sLastReasoning = sReasoning
+    UpdateReasoningToggle frm
     Set xmlHttp = Nothing
     DoCmd.Hourglass False
 
-    If Len(sAnswer) = 0 Then
+    If Len(sAnswer) = 0 And Len(sReasoning) = 0 Then
         MsgBox "API 返回内容为空。", vbExclamation
         GoTo ExitHere
     End If
 
     frm!lblMsg.Caption = "正在输出..."
+    If Len(sReasoning) > 0 Then
+        m_sStreamingReasoning = sReasoning
+        TryShowStreamingAnswer frm, "", sReasoning
+    End If
     TypewriterShow frm, sAnswer
 
     ' 固化本轮 AI 气泡
-    m_sChatHtml = m_sChatHtml & BuildAiBubbleHtml(sAnswer)
+    m_sChatHtml = m_sChatHtml & BuildAiResponseBubbleHtml(sReasoning, sAnswer)
     frm!txtAnswer.TextFormat = acTextFormatHTMLRichText
     frm!txtAnswer.Value = m_sChatHtml
     SetStatus frm, "回答完成。 (共 " & Len(sAnswer) & " 字符)", True
@@ -2418,6 +2971,14 @@ ErrHandler:
     MsgBox "Error " & Err.Number & ": " & Err.Description, vbExclamation
     Resume ExitHere
 End Sub
+
+Private Function ExtractMessageField(ByVal oJson As Object, ByVal sFieldName As String) As String
+    On Error GoTo MissingField
+    ExtractMessageField = Nz(oJson("choices")(1)("message")(sFieldName), "")
+    Exit Function
+MissingField:
+    Err.Clear
+End Function
 
 '====================================================
 ' 打字机效果 (方案B 使用, 速度自适应)
@@ -2445,7 +3006,7 @@ Private Sub TypewriterShow(frm As Form, ByVal sText As String)
 
     For lPos = lStep To lTotal Step lStep
         m_sStreamingAnswer = Left$(sText, lPos)
-        frm!txtAnswer.Value = m_sChatHtml & BuildAiStreamingBubbleHtml(Left$(sText, lPos), True)
+        frm!txtAnswer.Value = m_sChatHtml & BuildAiStreamingBubbleHtml(Left$(sText, lPos), True, m_sStreamingReasoning)
         frm.Repaint
         ScrollAnswerToEnd frm
         DoEvents
@@ -2453,7 +3014,7 @@ Private Sub TypewriterShow(frm As Form, ByVal sText As String)
     Next lPos
 
     m_sStreamingAnswer = sText
-    frm!txtAnswer.Value = m_sChatHtml & BuildAiStreamingBubbleHtml(sText, False)
+    frm!txtAnswer.Value = m_sChatHtml & BuildAiStreamingBubbleHtml(sText, False, m_sStreamingReasoning)
     frm.Repaint
 End Sub
 
@@ -2515,6 +3076,15 @@ Private Function ExtractApiErrorMessage(ByVal sResponse As String) As String
 End Function
 
 Private Function ParseSSEChunk(ByVal sChunk As String) As String
+    ParseSSEChunk = ParseSSEDeltaField(sChunk, "content")
+End Function
+
+Private Function ParseSSEReasoning(ByVal sChunk As String) As String
+    ParseSSEReasoning = ParseSSEDeltaField(sChunk, "reasoning_content")
+    If Len(ParseSSEReasoning) = 0 Then ParseSSEReasoning = ParseSSEDeltaField(sChunk, "reasoning")
+End Function
+
+Private Function ParseSSEDeltaField(ByVal sChunk As String, ByVal sFieldName As String) As String
     Dim vLines As Variant
     Dim i As Long
     Dim sLine As String
@@ -2530,37 +3100,41 @@ Private Function ParseSSEChunk(ByVal sChunk As String) As String
         sLine = CStr(vLines(i))
         If TryGetSSEData(sLine, sJsonStr) Then
             If sJsonStr <> "[DONE]" And Len(Trim$(sJsonStr)) > 0 Then
-                sResult = sResult & ExtractDelta(sJsonStr)
+                sResult = sResult & ExtractDeltaField(sJsonStr, sFieldName)
             End If
         End If
     Next i
 
-    ParseSSEChunk = sResult
+    ParseSSEDeltaField = sResult
 End Function
 
 '====================================================
 ' 用 JsonConverter 解析单条 SSE JSON
 '====================================================
 Private Function ExtractDelta(ByVal sJson As String) As String
+    ExtractDelta = ExtractDeltaField(sJson, "content")
+End Function
+
+Private Function ExtractDeltaField(ByVal sJson As String, ByVal sFieldName As String) As String
     On Error Resume Next
 
     Dim oJson As Object
     Set oJson = JsonConverter.ParseJson(sJson)
     If Err.Number <> 0 Then
         Err.Clear
-        ExtractDelta = ""
+        ExtractDeltaField = ""
         Exit Function
     End If
 
     Dim sDelta As String
-    sDelta = oJson("choices")(1)("delta")("content")
+    sDelta = oJson("choices")(1)("delta")(sFieldName)
     If Err.Number <> 0 Then
         Err.Clear
-        ExtractDelta = ""
+        ExtractDeltaField = ""
         Exit Function
     End If
 
-    ExtractDelta = sDelta
+    ExtractDeltaField = sDelta
 End Function
 
 '====================================================
@@ -2572,11 +3146,14 @@ Private Function BuildRequestBody(ByVal sQuestion As String, _
                                   Optional ByVal bStream As Boolean = False, _
                                   Optional ByVal colHist As Collection = Nothing, _
                                   Optional ByVal sSystemPrompt As String = "", _
-                                  Optional ByVal sReasoningEffort As String = "") As String
+                                  Optional ByVal sReasoningEffort As String = "", _
+                                  Optional ByVal dTemperature As Double = DEFAULT_TEMPERATURE, _
+                                  Optional ByVal lMaxTokens As Long = DEFAULT_MAX_TOKENS) As String
     Dim oRoot As Object
     Dim colMessages As Collection
     Dim oMsg As Object
     Dim vHistMsg As Variant
+    Dim sRequestedReasoningEffort As String
 
     Set oRoot = CreateObject("Scripting.Dictionary")
     Set colMessages = New Collection
@@ -2601,13 +3178,98 @@ Private Function BuildRequestBody(ByVal sQuestion As String, _
 
     oRoot.Add "model", sModel
     oRoot.Add "messages", colMessages
-    oRoot.Add "temperature", 0.7
-    oRoot.Add "max_tokens", 8192
-    sReasoningEffort = NormalizeReasoningEffort(sReasoningEffort)
+    If ModelSupportsTemperature(sModel) Then _
+        oRoot.Add "temperature", ClampDouble(dTemperature, 0, 2)
+    If ModelUsesMaxCompletionTokens(sModel) Then
+        oRoot.Add "max_completion_tokens", ClampLong(lMaxTokens, 1, ModelMaxOutputTokens(sModel))
+    Else
+        oRoot.Add "max_tokens", ClampLong(lMaxTokens, 1, ModelMaxOutputTokens(sModel))
+    End If
+    sRequestedReasoningEffort = sReasoningEffort
+    sReasoningEffort = ModelReasoningEffort(sModel, sRequestedReasoningEffort)
     If Len(sReasoningEffort) > 0 Then oRoot.Add "reasoning_effort", sReasoningEffort
+    AddModelThinkingConfig oRoot, sModel, sRequestedReasoningEffort
     If bStream Then oRoot.Add "stream", True
 
     BuildRequestBody = JsonConverter.ConvertToJson(oRoot)
+End Function
+
+Private Function ModelMaxOutputTokens(ByVal sModel As String) As Long
+    sModel = LCase$(Trim$(sModel))
+    Select Case True
+        Case sModel Like "kimi-k3*"
+            ModelMaxOutputTokens = 1048576
+        Case sModel Like "deepseek-*"
+            ModelMaxOutputTokens = 393216
+        Case sModel Like "kimi-k2.6*", sModel Like "kimi-k2.7*"
+            ModelMaxOutputTokens = 262144
+        Case sModel Like "gpt-6*"
+            ModelMaxOutputTokens = 128000
+        Case sModel Like "gpt-5*", sModel Like "glm-5*"
+            ModelMaxOutputTokens = 131072
+        Case sModel Like "ernie-*", sModel Like "qwen*", sModel Like "gemini-*"
+            ModelMaxOutputTokens = 65536
+        Case sModel = "4.0ultra"
+            ModelMaxOutputTokens = 32768
+        Case Else
+            ModelMaxOutputTokens = 384000
+    End Select
+End Function
+
+Private Sub AddModelThinkingConfig(ByRef oRoot As Object, ByVal sModel As String, _
+                                   ByVal sReasoningEffort As String)
+    Dim oThinking As Object
+    sModel = LCase$(Trim$(sModel))
+    If Len(NormalizeReasoningEffort(sReasoningEffort)) = 0 Then Exit Sub
+    If Not (sModel Like "kimi-k2.6*" Or sModel Like "kimi-k2.7*" Or _
+            sModel Like "glm-5*") Then Exit Sub
+
+    Set oThinking = CreateObject("Scripting.Dictionary")
+    oThinking.Add "type", "enabled"
+    If sModel Like "kimi-k2.7*" Then oThinking.Add "keep", "all"
+    oRoot.Add "thinking", oThinking
+End Sub
+
+Private Function UsesApiKeyHeader(ByVal sUrl As String) As Boolean
+    sUrl = LCase$(Trim$(sUrl))
+    UsesApiKeyHeader = (InStr(1, sUrl, ".openai.azure.com", vbTextCompare) > 0) Or _
+                       (InStr(1, sUrl, ".services.ai.azure.com", vbTextCompare) > 0)
+End Function
+
+Private Function ModelUsesMaxCompletionTokens(ByVal sModel As String) As Boolean
+    sModel = LCase$(Trim$(sModel))
+    ModelUsesMaxCompletionTokens = _
+        (sModel Like "gpt-5*") Or (sModel Like "gpt-6*") Or _
+        (sModel Like "o1*") Or (sModel Like "o3*") Or (sModel Like "o4*") Or _
+        (sModel Like "kimi-k2.6*") Or (sModel Like "kimi-k2.7*") Or _
+        (sModel Like "kimi-k3*")
+End Function
+
+Private Function ModelSupportsTemperature(ByVal sModel As String) As Boolean
+    sModel = LCase$(Trim$(sModel))
+    ModelSupportsTemperature = Not ( _
+        (sModel Like "gpt-5*") Or (sModel Like "gpt-6*") Or _
+        (sModel Like "o1*") Or (sModel Like "o3*") Or (sModel Like "o4*") Or _
+        (sModel Like "kimi-k3*"))
+End Function
+
+Private Function ModelReasoningEffort(ByVal sModel As String, _
+                                      ByVal sReasoningEffort As String) As String
+    Dim sEffort As String
+    sModel = LCase$(Trim$(sModel))
+    sEffort = NormalizeReasoningEffort(sReasoningEffort)
+    If Len(sEffort) = 0 Then Exit Function
+
+    If sModel Like "kimi-k3*" Or sModel Like "ernie-*" Then
+        Select Case sEffort
+            Case "low", "medium": ModelReasoningEffort = "high"
+            Case "high": ModelReasoningEffort = "high"
+            Case "xhigh": ModelReasoningEffort = "max"
+        End Select
+    ElseIf (sModel Like "gpt-5*") Or (sModel Like "gpt-6*") Or _
+           (sModel Like "o1*") Or (sModel Like "o3*") Or (sModel Like "o4*") Then
+        ModelReasoningEffort = sEffort
+    End If
 End Function
 
 '====================================================
@@ -2724,8 +3386,7 @@ End Function
 
 '====================================================
 ' 创建 AI 问答窗体 frmAI
-' 包含: cboProvider, txtQ, txtAnswer(富文本), lblMsg,
-'       btnAsk, btnNewChat, 自定义端点字段
+' 包含: txtQ, txtAnswer(富文本), lblMsg, 发送/取消、历史和独立配置入口
 '====================================================
 Public Sub CreateAIForm(Optional ByVal bSilent As Boolean = False)
     On Error GoTo Err_Create
@@ -2782,6 +3443,7 @@ Public Sub CreateAIForm(Optional ByVal bSilent As Boolean = False)
 
     ' 顶栏背景
     Set ctl = CreateControl(frm.Name, acRectangle, acDetail, , , 0, 0, 14400, 620)
+    ctl.Name = "rectChatHeader"
     ctl.BackColor = cToolbar
     ctl.BackStyle = 1
     ctl.BorderStyle = 0
@@ -2789,6 +3451,7 @@ Public Sub CreateAIForm(Optional ByVal bSilent As Boolean = False)
 
     ' 顶栏底部分隔线
     Set ctl = CreateControl(frm.Name, acRectangle, acDetail, , , 0, 600, 14400, 20)
+    ctl.Name = "rectChatDivider"
     ctl.BackColor = cToolBorder
     ctl.BackStyle = 1
     ctl.BorderStyle = 0
@@ -2796,6 +3459,7 @@ Public Sub CreateAIForm(Optional ByVal bSilent As Boolean = False)
 
     ' --- 标题: 渐变感图标 + 文字 ---
     Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 340, 130, 2500, 360)
+    ctl.Name = "lblChatTitle"
     ctl.Caption = ChrW(&H2726) & " Access LLM Toolkit"
     ctl.FontName = "Microsoft YaHei"
     ctl.FontSize = 13
@@ -2803,51 +3467,40 @@ Public Sub CreateAIForm(Optional ByVal bSilent As Boolean = False)
     ctl.ForeColor = cAccent
     ctl.BackStyle = 0
 
-    ' --- cboProvider: 模型下拉框 (胶囊形) ---
-    Set ctl = CreateControl(frm.Name, acComboBox, acDetail, , , 3000, 130, 2300, 360)
-    ctl.Name = "cboProvider"
-    ctl.FontName = "Microsoft YaHei"
-    ctl.FontSize = 10
-    ctl.RowSourceType = "Value List"
-    ctl.RowSource = GetProviderRowSource()
-    ctl.DefaultValue = """DeepSeek Pro"""
-    ctl.LimitToList = True
-    ctl.BackColor = cSurface
-    ctl.ForeColor = cText
-    ctl.BorderColor = cBorder
-    ctl.AfterUpdate = "=cboProvider_AfterUpdate()"
-
-    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 5400, 170, 700, 280)
-    ctl.Name = "lblReasoningEffort"
-    ctl.Caption = "思考"
-    ctl.FontName = "Microsoft YaHei"
-    ctl.FontSize = 8
-    ctl.ForeColor = cSubText
+    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 600, 1080, 700, 360)
+    ctl.Name = "lblChatProvider"
+    ctl.Caption = "模型"
     ctl.BackStyle = 0
 
-    Set ctl = CreateControl(frm.Name, acComboBox, acDetail, , , 6000, 130, 1400, 360)
+    Set ctl = CreateControl(frm.Name, acComboBox, acDetail, , , 1440, 1020, 5100, 480)
+    ctl.Name = "cboProvider"
+    ctl.RowSourceType = "Value List"
+    ctl.RowSource = GetProviderRowSource()
+    ctl.DefaultValue = """" & Replace(GetSetting(SETTINGS_APP, SETTINGS_SECTION, "Provider", "DeepSeek Pro"), """", """""") & """"
+    ctl.LimitToList = True
+    ctl.AfterUpdate = "=cboProvider_AfterUpdate()"
+
+    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 6960, 1080, 1100, 360)
+    ctl.Name = "lblReasoningEffort"
+    ctl.Caption = "思考强度"
+    ctl.BackStyle = 0
+
+    Set ctl = CreateControl(frm.Name, acComboBox, acDetail, , , 8160, 1020, 2160, 480)
     ctl.Name = "cboReasoningEffort"
-    ctl.FontName = "Microsoft YaHei"
-    ctl.FontSize = 9
     ctl.RowSourceType = "Value List"
     ctl.RowSource = """默认"";""low"";""medium"";""high"";""xhigh"""
     ctl.DefaultValue = """" & Replace(GetSavedReasoningEffort(), """", """""") & """"
     ctl.LimitToList = True
-    ctl.BackColor = cSurface
-    ctl.ForeColor = cText
-    ctl.BorderColor = cBorder
     ctl.AfterUpdate = "=cboReasoningEffort_AfterUpdate()"
 
-    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 6000, 500, 2100, 180)
-    ctl.Name = "lblReasoningCostHint"
-    ctl.Caption = "高级别可能增加成本"
-    ctl.FontName = "Microsoft YaHei"
-    ctl.FontSize = 7
-    ctl.ForeColor = cSubText
-    ctl.BackStyle = 0
+    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 8200, 500, 1400, 170)
+    ctl.Name = "btnToggleReasoning"
+    ctl.Caption = "查看思考"
+    ctl.FontName = "Microsoft YaHei": ctl.FontSize = 8: ctl.Visible = False
+    ctl.OnClick = "=btnToggleReasoning_Click()"
 
     ' --- btnNewChat: 新对话 ---
-    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 7700, 130, 2000, 360)
+    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 7700, 130, 1600, 360)
     ctl.Name = "btnNewChat"
     ctl.Caption = ChrW(&H2795) & " 新对话"
     ctl.FontName = "Microsoft YaHei"
@@ -2857,7 +3510,7 @@ Public Sub CreateAIForm(Optional ByVal bSilent As Boolean = False)
     ctl.OnClick = "=btnNewChat_Click()"
 
     ' --- btnHistory: 历史记录 ---
-    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 9900, 130, 2200, 360)
+    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 9400, 130, 1700, 360)
     ctl.Name = "btnHistory"
     ctl.Caption = " 历史记录"
     ctl.FontName = "Microsoft YaHei"
@@ -2866,191 +3519,24 @@ Public Sub CreateAIForm(Optional ByVal bSilent As Boolean = False)
     ctl.BackColor = cToolbar
     ctl.OnClick = "=btnHistory_Click()"
 
-    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 12200, 130, 1800, 360)
-    ctl.Name = "btnApiSettings"
-    ctl.Caption = "API 设置"
+    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 11200, 130, 1300, 360)
+    ctl.Name = "btnModelSettings"
+    ctl.Caption = "模型配置"
     ctl.FontName = "Microsoft YaHei"
     ctl.FontSize = 9
     ctl.ForeColor = cSubText
     ctl.BackColor = cToolbar
-    ctl.OnClick = "=btnApiSettings_Click()"
+    ctl.OnClick = "=btnModelSettings_Click()"
 
-    ' ========== 自定义端点字段 (默认隐藏, 浅色卡片) ==========
-
-    ' 自定义区域背景
-    Set ctl = CreateControl(frm.Name, acRectangle, acDetail, , , 250, 680, 13900, 420)
-    ctl.Name = "rectCustomBg"
-    ctl.BackColor = cSurface
-    ctl.BackStyle = 1
-    ctl.BorderColor = cBorder
-    ctl.BorderStyle = 1
-    ctl.SpecialEffect = 0
-    ctl.Visible = False
-
-    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 400, 720, 500, 300)
-    ctl.Name = "lblCustomUrl"
-    ctl.Caption = "URL"
+    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 12600, 130, 1400, 360)
+    ctl.Name = "btnDataTools"
+    ctl.Caption = "工具"
     ctl.FontName = "Microsoft YaHei"
-    ctl.FontSize = 8
+    ctl.FontSize = 9
     ctl.ForeColor = cSubText
-    ctl.BackStyle = 0
-    ctl.Visible = False
+    ctl.BackColor = cToolbar
+    ctl.OnClick = "=btnDataTools_Click()"
 
-    Set ctl = CreateControl(frm.Name, acTextBox, acDetail, , , 900, 710, 3800, 340)
-    ctl.Name = "txtCustomUrl"
-    ctl.FontName = "Microsoft YaHei"
-    ctl.FontSize = 9
-    ctl.BackColor = cBg
-    ctl.BorderColor = cBorder
-    ctl.BorderStyle = 1
-    ctl.SpecialEffect = 0
-    ctl.Visible = False
-
-    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 4900, 720, 450, 300)
-    ctl.Name = "lblCustomKey"
-    ctl.Caption = "Key"
-    ctl.FontName = "Microsoft YaHei"
-    ctl.FontSize = 8
-    ctl.ForeColor = cSubText
-    ctl.BackStyle = 0
-    ctl.Visible = False
-
-    Set ctl = CreateControl(frm.Name, acTextBox, acDetail, , , 5400, 710, 3200, 340)
-    ctl.Name = "txtCustomKey"
-    ctl.FontName = "Microsoft YaHei"
-    ctl.FontSize = 9
-    ctl.InputMask = "Password"
-    ctl.BackColor = cBg
-    ctl.BorderColor = cBorder
-    ctl.BorderStyle = 1
-    ctl.SpecialEffect = 0
-    ctl.Visible = False
-
-    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 8850, 720, 600, 300)
-    ctl.Name = "lblCustomModel"
-    ctl.Caption = "模型"
-    ctl.FontName = "Microsoft YaHei"
-    ctl.FontSize = 8
-    ctl.ForeColor = cSubText
-    ctl.BackStyle = 0
-    ctl.Visible = False
-
-    Set ctl = CreateControl(frm.Name, acTextBox, acDetail, , , 9500, 710, 4500, 340)
-    ctl.Name = "txtCustomModel"
-    ctl.FontName = "Microsoft YaHei"
-    ctl.FontSize = 9
-    ctl.BackColor = cBg
-    ctl.BorderColor = cBorder
-    ctl.BorderStyle = 1
-    ctl.SpecialEffect = 0
-    ctl.Visible = False
-
-    ' ========== 系统提示词配置 ==========
-
-    Set ctl = CreateControl(frm.Name, acRectangle, acDetail, , , 250, 1130, 13900, 420)
-    ctl.Name = "rectSystemPromptBg"
-    ctl.BackColor = cSurface
-    ctl.BackStyle = 1
-    ctl.BorderColor = cBorder
-    ctl.BorderStyle = 1
-    ctl.SpecialEffect = 0
-
-    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 400, 1170, 1050, 300)
-    ctl.Name = "lblSystemPrompt"
-    ctl.Caption = "系统提示词"
-    ctl.FontName = "Microsoft YaHei"
-    ctl.FontSize = 8
-    ctl.ForeColor = cSubText
-    ctl.BackStyle = 0
-
-    Set ctl = CreateControl(frm.Name, acComboBox, acDetail, , , 1500, 1160, 2300, 340)
-    ctl.Name = "cboPromptTemplate"
-    ctl.FontName = "Microsoft YaHei"
-    ctl.FontSize = 9
-    ctl.RowSourceType = "Value List"
-    ctl.RowSource = GetPromptTemplateRowSource()
-    ctl.DefaultValue = """通用助手"""
-    ctl.LimitToList = True
-    ctl.AfterUpdate = "=cboPromptTemplate_AfterUpdate()"
-
-    Set ctl = CreateControl(frm.Name, acTextBox, acDetail, , , 4000, 1160, 10000, 340)
-    ctl.Name = "txtSystemPrompt"
-    ctl.FontName = "Microsoft YaHei"
-    ctl.FontSize = 9
-    ctl.BackColor = cBg
-    ctl.ForeColor = cText
-    ctl.BorderColor = cBorder
-    ctl.BorderStyle = 1
-    ctl.SpecialEffect = 0
-    ctl.DefaultValue = """" & Replace(GetSavedSystemPrompt(), """", """""") & """"
-    ctl.AfterUpdate = "=txtSystemPrompt_AfterUpdate()"
-
-    ' ========== 当前数据库表/查询分析 ==========
-
-    Set ctl = CreateControl(frm.Name, acRectangle, acDetail, , , 250, 1580, 13900, 420)
-    ctl.Name = "rectDbObjectBg"
-    ctl.BackColor = cSurface
-    ctl.BackStyle = 1
-    ctl.BorderColor = cBorder
-    ctl.BorderStyle = 1
-    ctl.SpecialEffect = 0
-
-    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 400, 1620, 900, 300)
-    ctl.Name = "lblDbObject"
-    ctl.Caption = "数据对象"
-    ctl.FontName = "Microsoft YaHei"
-    ctl.FontSize = 8
-    ctl.ForeColor = cSubText
-    ctl.BackStyle = 0
-
-    Set ctl = CreateControl(frm.Name, acComboBox, acDetail, , , 1300, 1610, 3500, 340)
-    ctl.Name = "cboDbObject"
-    ctl.FontName = "Microsoft YaHei"
-    ctl.FontSize = 9
-    ctl.RowSourceType = "Value List"
-    ctl.RowSource = GetDbObjectRowSource()
-    ctl.LimitToList = True
-    ctl.BackColor = cBg
-    ctl.ForeColor = cText
-    ctl.BorderColor = cBorder
-    ctl.OnGotFocus = "=cboDbObject_GotFocus()"
-
-    Set ctl = CreateControl(frm.Name, acComboBox, acDetail, , , 4900, 1610, 2600, 340)
-    ctl.Name = "cboDataPreset"
-    ctl.FontName = "Microsoft YaHei"
-    ctl.FontSize = 9
-    ctl.RowSourceType = "Value List"
-    ctl.RowSource = GetDataPresetRowSource()
-    ctl.DefaultValue = """综合质量"""
-    ctl.LimitToList = True
-    ctl.AfterUpdate = "=cboDataPreset_AfterUpdate()"
-
-    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 7600, 1610, 1800, 340)
-    ctl.Name = "btnAnalyzeData"
-    ctl.Caption = "分析数据"
-    ctl.FontName = "Microsoft YaHei"
-    ctl.FontSize = 9
-    ctl.ForeColor = cAccentText
-    ctl.BackColor = cAccent
-    ctl.OnClick = "=btnAnalyzeData_Click()"
-
-    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 9500, 1610, 1900, 340)
-    ctl.Name = "btnGenerateSql"
-    ctl.Caption = "生成 SQL"
-    ctl.FontName = "Microsoft YaHei"
-    ctl.FontSize = 9
-    ctl.OnClick = "=btnGenerateSql_Click()"
-
-    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 11600, 1610, 2400, 340)
-    ctl.Name = "btnAttachDocument"
-    ctl.Caption = "添加文档"
-    ctl.FontName = "Microsoft YaHei"
-    ctl.FontSize = 9
-    ctl.OnClick = "=btnAttachDocument_Click()"
-
-    ' ========== 核心区域 ==========
-
-    ' --- txtAnswer: 回答区 (大面积白底, 极简边框) ---
     Set ctl = CreateControl(frm.Name, acTextBox, acDetail, , , 500, 2080, 13400, 6360)
     ctl.Name = "txtAnswer"
     ctl.FontName = "Microsoft YaHei"
@@ -3065,10 +3551,9 @@ Public Sub CreateAIForm(Optional ByVal bSilent As Boolean = False)
     ctl.TabStop = True
     ctl.EnterKeyBehavior = True
 
-    ' --- lblMsg: 状态标签 ---
     Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 500, 8500, 8300, 280)
     ctl.Name = "lblMsg"
-    ctl.Caption = "选择模型，输入问题后点击发送"
+    ctl.Caption = "请输入问题"
     ctl.FontName = "Microsoft YaHei"
     ctl.FontSize = 8
     ctl.ForeColor = cSubText
@@ -3085,13 +3570,14 @@ Public Sub CreateAIForm(Optional ByVal bSilent As Boolean = False)
 
     ' --- 输入区: 圆角感容器 ---
     Set ctl = CreateControl(frm.Name, acRectangle, acDetail, , , 400, 8850, 13600, 1500)
+    ctl.Name = "rectChatInput"
     ctl.BackColor = cSurface
     ctl.BorderColor = cBorder
     ctl.BackStyle = 1
     ctl.SpecialEffect = 0
 
     ' --- txtQ: 问题输入框 ---
-    Set ctl = CreateControl(frm.Name, acTextBox, acDetail, , , 550, 9000, 10800, 1200)
+    Set ctl = CreateControl(frm.Name, acTextBox, acDetail, , , 550, 9000, 9200, 1200)
     ctl.Name = "txtQ"
     ctl.FontName = "Microsoft YaHei"
     ctl.FontSize = 11
@@ -3102,6 +3588,15 @@ Public Sub CreateAIForm(Optional ByVal bSilent As Boolean = False)
     ctl.SpecialEffect = 0
 
     ' --- btnAsk: 发送按钮 (品牌色胶囊) ---
+    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 9950, 9050, 1450, 1100)
+    ctl.Name = "btnCancelRequest"
+    ctl.Caption = "取消"
+    ctl.FontName = "Microsoft YaHei"
+    ctl.FontSize = 10
+    ctl.ForeColor = cText
+    ctl.BackColor = cBg
+    ctl.OnClick = "=btnCancelRequest_Click()"
+
     Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 11600, 9050, 2200, 1100)
     ctl.Name = "btnAsk"
     ctl.Caption = ChrW(&H27A4) & " 发送"
@@ -3113,6 +3608,7 @@ Public Sub CreateAIForm(Optional ByVal bSilent As Boolean = False)
     ctl.OnClick = "=btnAsk_Click()"
 
     ' 保存窗体
+    ApplyChatFormLayout frm
     sTmp = frm.Name
     DoCmd.Close acForm, sTmp, acSaveYes
     Set frm = Nothing
@@ -3150,7 +3646,171 @@ End Sub
 Public Sub ConfigureApiKeys()
     If Not FormExists(API_KEY_FORM) Then CreateApiKeySettingsForm
     DoCmd.OpenForm API_KEY_FORM, acNormal
+    Forms(API_KEY_FORM)!cboApiProvider.RowSource = GetCredentialProviderRowSource()
     cboApiProvider_AfterUpdate
+End Sub
+
+Public Sub ConfigureModelParameters()
+    If Not FormExists(MODEL_SETTINGS_FORM) Then CreateModelSettingsForm
+    DoCmd.OpenForm MODEL_SETTINGS_FORM, acNormal
+    If Not HasControl(Forms(MODEL_SETTINGS_FORM), "cboProvider") Then
+        DoCmd.Close acForm, MODEL_SETTINGS_FORM, acSaveNo
+        DoCmd.DeleteObject acForm, MODEL_SETTINGS_FORM
+        CreateModelSettingsForm
+        DoCmd.OpenForm MODEL_SETTINGS_FORM, acNormal
+    End If
+    Forms(MODEL_SETTINGS_FORM)!cboProvider.Value = GetSetting(SETTINGS_APP, SETTINGS_SECTION, "Provider", "DeepSeek Pro")
+    Forms(MODEL_SETTINGS_FORM)!cboReasoningEffort.Value = GetSavedReasoningEffort()
+    Forms(MODEL_SETTINGS_FORM)!txtCustomUrl.Value = GetSetting(SETTINGS_APP, SETTINGS_SECTION, "CustomUrl", "")
+    Forms(MODEL_SETTINGS_FORM)!txtCustomModel.Value = GetSetting(SETTINGS_APP, SETTINGS_SECTION, "CustomModel", "")
+    Forms(MODEL_SETTINGS_FORM)!txtCustomKey.Value = Null
+    Forms(MODEL_SETTINGS_FORM)!cboPromptTemplate.Value = GetSetting(SETTINGS_APP, SETTINGS_SECTION, "PromptTemplate", "通用助手")
+    Forms(MODEL_SETTINGS_FORM)!txtSystemPrompt.Value = GetSavedSystemPrompt()
+    Forms(MODEL_SETTINGS_FORM)!txtTemperature.Value = GetSavedTemperature()
+    Forms(MODEL_SETTINGS_FORM)!txtMaxTokens.Value = GetSavedMaxTokens()
+    Forms(MODEL_SETTINGS_FORM)!txtTimeoutSeconds.Value = GetSavedTimeoutSeconds()
+    cboProvider_AfterUpdate
+End Sub
+
+Private Sub CreateModelSettingsForm()
+    On Error GoTo ErrHandler
+    Dim frm As Form
+    Dim ctl As Control
+    Dim sTmp As String
+
+    Set frm = CreateForm
+    With frm
+        .Caption = "模型配置"
+        .DefaultView = 0
+        .ScrollBars = 2
+        .RecordSelectors = False
+        .NavigationButtons = False
+        .DividingLines = False
+        .AutoCenter = True
+        .PopUp = True
+        .Modal = True
+        .Width = 10800
+        .Section(acDetail).Height = 10200
+        .Section(acDetail).BackColor = RGB(255, 255, 255)
+    End With
+
+    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 450, 320, 5600, 420)
+    ctl.Caption = "模型配置": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 16: ctl.FontBold = True: ctl.BackStyle = 0: ctl.ForeColor = RGB(78, 108, 254)
+    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 8100, 300, 2100, 540)
+    ctl.Name = "btnApiSettings": ctl.Caption = "API Key 设置": ctl.OnClick = "=btnApiSettings_Click()"
+
+    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 450, 1110, 1900, 360)
+    ctl.Caption = "模型"
+    Set ctl = CreateControl(frm.Name, acComboBox, acDetail, , , 2600, 1020, 7600, 540)
+    ctl.Name = "cboProvider": ctl.RowSourceType = "Value List": ctl.RowSource = GetProviderRowSource(): ctl.LimitToList = True
+    ctl.AfterUpdate = "=cboProvider_AfterUpdate()"
+    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 450, 1770, 1900, 360)
+    ctl.Caption = "思考强度"
+    Set ctl = CreateControl(frm.Name, acComboBox, acDetail, , , 2600, 1680, 2400, 540)
+    ctl.Name = "cboReasoningEffort": ctl.RowSourceType = "Value List": ctl.RowSource = """默认"";""low"";""medium"";""high"";""xhigh""": ctl.LimitToList = True
+    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 5300, 1770, 4900, 360)
+    ctl.Caption = "高级别可能增加成本"
+
+    Set ctl = CreateControl(frm.Name, acRectangle, acDetail, , , 300, 2340, 10050, 1920)
+    ctl.Name = "rectCustomBg": ctl.BackStyle = 0: ctl.BorderColor = RGB(228, 231, 236)
+    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 450, 2550, 1900, 360)
+    ctl.Name = "lblCustomUrl": ctl.Caption = "URL"
+    Set ctl = CreateControl(frm.Name, acTextBox, acDetail, , , 2600, 2460, 7600, 480)
+    ctl.Name = "txtCustomUrl"
+    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 450, 3150, 1900, 360)
+    ctl.Name = "lblCustomKey": ctl.Caption = "Key (留空保留)"
+    Set ctl = CreateControl(frm.Name, acTextBox, acDetail, , , 2600, 3060, 7600, 480)
+    ctl.Name = "txtCustomKey": ctl.InputMask = "Password"
+    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 450, 3750, 1900, 360)
+    ctl.Name = "lblCustomModel": ctl.Caption = "模型"
+    Set ctl = CreateControl(frm.Name, acTextBox, acDetail, , , 2600, 3660, 7600, 480)
+    ctl.Name = "txtCustomModel"
+
+    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 450, 4530, 1900, 360)
+    ctl.Caption = "提示词模板"
+    Set ctl = CreateControl(frm.Name, acComboBox, acDetail, , , 2600, 4440, 7600, 540)
+    ctl.Name = "cboPromptTemplate": ctl.RowSourceType = "Value List": ctl.RowSource = GetPromptTemplateRowSource(): ctl.LimitToList = True
+    ctl.AfterUpdate = "=cboPromptTemplate_AfterUpdate()"
+    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 450, 5190, 1900, 360)
+    ctl.Caption = "系统提示词"
+    Set ctl = CreateControl(frm.Name, acTextBox, acDetail, , , 2600, 5100, 7600, 1200)
+    ctl.Name = "txtSystemPrompt": ctl.EnterKeyBehavior = True: ctl.ScrollBars = 2
+
+    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 450, 6570, 1900, 360)
+    ctl.Caption = "温度 (0-2)": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 9: ctl.BackStyle = 0
+    Set ctl = CreateControl(frm.Name, acTextBox, acDetail, , , 2600, 6480, 7600, 540)
+    ctl.Name = "txtTemperature": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 10: ctl.DefaultValue = CStr(DEFAULT_TEMPERATURE)
+    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 450, 7290, 1900, 360)
+    ctl.Caption = "最大 Token": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 9: ctl.BackStyle = 0
+    Set ctl = CreateControl(frm.Name, acTextBox, acDetail, , , 2600, 7200, 7600, 540)
+    ctl.Name = "txtMaxTokens": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 10: ctl.DefaultValue = CStr(DEFAULT_MAX_TOKENS)
+    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 450, 8010, 1900, 360)
+    ctl.Caption = "超时 (秒)": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 9: ctl.BackStyle = 0
+    Set ctl = CreateControl(frm.Name, acTextBox, acDetail, , , 2600, 7920, 7600, 540)
+    ctl.Name = "txtTimeoutSeconds": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 10: ctl.DefaultValue = CStr(DEFAULT_TIMEOUT_SECONDS)
+    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 6900, 9060, 3300, 600)
+    ctl.Name = "btnSaveModelSettings": ctl.Caption = "保存配置": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 10: ctl.BackColor = RGB(78, 108, 254): ctl.ForeColor = RGB(255, 255, 255): ctl.OnClick = "=btnSaveModelSettings_Click()"
+    For Each ctl In frm.Controls
+        If ctl.ControlType <> acRectangle Then
+            ctl.FontName = "Microsoft YaHei"
+            If ctl.FontSize < 10 Then ctl.FontSize = 10
+        End If
+        If ctl.ControlType = acLabel Then ctl.BackStyle = 0
+    Next ctl
+
+    sTmp = frm.Name
+    DoCmd.Close acForm, sTmp, acSaveYes
+    If sTmp <> MODEL_SETTINGS_FORM Then DoCmd.Rename MODEL_SETTINGS_FORM, acForm, sTmp
+    Exit Sub
+ErrHandler:
+    MsgBox "CreateModelSettingsForm: " & Err.Description, vbExclamation
+End Sub
+
+Private Sub CreateDataToolsForm()
+    Dim frm As Form
+    Dim ctl As Control
+    Dim sTmp As String
+    Set frm = CreateForm
+    With frm
+        .Caption = "对话工具"
+        .DefaultView = 0
+        .ScrollBars = 0
+        .RecordSelectors = False
+        .NavigationButtons = False
+        .DividingLines = False
+        .AutoCenter = True
+        .PopUp = True
+        .Modal = True
+        .Width = 9000
+        .Section(acDetail).Height = 3480
+        .Section(acDetail).BackColor = RGB(255, 255, 255)
+    End With
+    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 480, 300, 7800, 420)
+    ctl.Caption = "对话工具": ctl.FontSize = 16: ctl.FontBold = True
+    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 480, 1170, 1620, 360)
+    ctl.Caption = "数据对象"
+    Set ctl = CreateControl(frm.Name, acComboBox, acDetail, , , 2400, 1080, 6000, 540)
+    ctl.Name = "cboDbObject": ctl.RowSourceType = "Value List": ctl.LimitToList = True
+    ctl.OnGotFocus = "=cboDbObject_GotFocus()"
+    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 480, 1890, 1620, 360)
+    ctl.Caption = "分析类型"
+    Set ctl = CreateControl(frm.Name, acComboBox, acDetail, , , 2400, 1800, 6000, 540)
+    ctl.Name = "cboDataPreset": ctl.RowSourceType = "Value List": ctl.RowSource = GetDataPresetRowSource()
+    ctl.DefaultValue = """综合质量""": ctl.LimitToList = True
+    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 480, 2700, 2400, 540)
+    ctl.Name = "btnAnalyzeData": ctl.Caption = "分析数据": ctl.OnClick = "=btnAnalyzeData_Click()"
+    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 3240, 2700, 2400, 540)
+    ctl.Name = "btnGenerateSql": ctl.Caption = "生成 SQL": ctl.OnClick = "=btnGenerateSql_Click()"
+    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 6000, 2700, 2400, 540)
+    ctl.Name = "btnAttachDocument": ctl.Caption = "添加文档": ctl.OnClick = "=btnAttachDocument_Click()"
+    For Each ctl In frm.Controls
+        ctl.FontName = "Microsoft YaHei"
+        If ctl.FontSize < 10 Then ctl.FontSize = 10
+        If ctl.ControlType = acLabel Then ctl.BackStyle = 0
+    Next ctl
+    sTmp = frm.Name
+    DoCmd.Close acForm, sTmp, acSaveYes
+    If sTmp <> DATA_TOOLS_FORM Then DoCmd.Rename DATA_TOOLS_FORM, acForm, sTmp
 End Sub
 
 Private Sub CreateApiKeySettingsForm()
@@ -3181,7 +3841,7 @@ Private Sub CreateApiKeySettingsForm()
     ctl.Caption = "提供商": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 9: ctl.BackStyle = 0
     Set ctl = CreateControl(frm.Name, acComboBox, acDetail, , , 1600, 1000, 5200, 380)
     ctl.Name = "cboApiProvider": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 10
-    ctl.RowSourceType = "Value List": ctl.RowSource = """DeepSeek Pro"";""通义千问"";""文心一言"";""Kimi"";""OpenAI GPT-5.6 Sol"";""GLM Plus"";""Gemini Pro"";""豆包"";""腾讯混元"";""讯飞星火"""
+    ctl.RowSourceType = "Value List": ctl.RowSource = GetCredentialProviderRowSource()
     ctl.DefaultValue = """DeepSeek Pro""": ctl.LimitToList = True: ctl.AfterUpdate = "=cboApiProvider_AfterUpdate()"
     Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 450, 1690, 1100, 300)
     ctl.Caption = "API Key": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 9: ctl.BackStyle = 0
@@ -3290,6 +3950,7 @@ Public Sub CreateAIWebForm()
     ctl.Name = "txtAnswer"
     ctl.Visible = False
 
+    ApplyChatFormLayout frm
     sTmp = frm.Name
     DoCmd.Close acForm, sTmp, acSaveYes
     Set frm = Nothing
@@ -3307,6 +3968,56 @@ Err_Create:
     MsgBox "CreateAIWebForm: " & Err.Description, vbExclamation
 End Sub
 
+Private Sub ApplyChatFormLayout(frm As Form)
+    Dim ctl As Control
+    frm.Width = 15600
+    frm.Section(acDetail).Height = 11200
+    frm.ScrollBars = 2
+
+    For Each ctl In frm.Controls
+        Select Case ctl.ControlType
+            Case acCommandButton, acComboBox, acTextBox
+                ctl.FontName = "Microsoft YaHei"
+                If ctl.FontSize < 10 Then ctl.FontSize = 10
+            Case acLabel
+                ctl.FontName = "Microsoft YaHei"
+                If ctl.FontSize < 9 Then ctl.FontSize = 9
+        End Select
+    Next ctl
+
+    SetChatControlBounds frm, "rectChatHeader", 0, 0, 15600, 960
+    SetChatControlBounds frm, "rectChatDivider", 0, 1650, 15600, 20
+    SetChatControlBounds frm, "lblChatTitle", 600, 240, 5400, 480
+    SetChatControlBounds frm, "btnNewChat", 6900, 240, 1800, 480
+    SetChatControlBounds frm, "btnHistory", 9000, 240, 2100, 480
+    SetChatControlBounds frm, "btnModelSettings", 11400, 240, 2100, 480
+    SetChatControlBounds frm, "btnDataTools", 13800, 240, 1200, 480
+    SetChatControlBounds frm, "lblChatProvider", 600, 1100, 700, 360
+    SetChatControlBounds frm, "cboProvider", 1440, 1020, 5100, 480
+    SetChatControlBounds frm, "lblReasoningEffort", 6960, 1100, 1100, 360
+    SetChatControlBounds frm, "cboReasoningEffort", 8160, 1020, 2160, 480
+
+    If HasControl(frm, "wbChat") Then
+        SetChatControlBounds frm, "wbChat", 600, 1800, 14400, 6240
+    Else
+        SetChatControlBounds frm, "txtAnswer", 600, 1800, 14400, 6240
+    End If
+    SetChatControlBounds frm, "lblMsg", 600, 8220, 8100, 360
+    SetChatControlBounds frm, "lblTokenStats", 9000, 8220, 6000, 360
+    SetChatControlBounds frm, "btnToggleReasoning", 12600, 8760, 2400, 480
+    SetChatControlBounds frm, "rectChatInput", 360, 9480, 14880, 1500
+    SetChatControlBounds frm, "txtQ", 600, 9720, 9840, 1020
+    SetChatControlBounds frm, "btnCancelRequest", 10740, 9960, 1740, 540
+    SetChatControlBounds frm, "btnAsk", 12780, 9960, 2220, 540
+End Sub
+
+Private Sub SetChatControlBounds(frm As Form, ByVal sControlName As String, _
+                                 ByVal lLeft As Long, ByVal lTop As Long, _
+                                 ByVal lWidth As Long, ByVal lHeight As Long)
+    If Not HasControl(frm, sControlName) Then Exit Sub
+    frm.Controls(sControlName).Move lLeft, lTop, lWidth, lHeight
+End Sub
+
 Private Sub CreateSharedChatControls(frm As Form)
     Dim ctl As Control
     Dim cBg As Long, cSurface As Long, cBorder As Long, cText As Long, cSubText As Long, cAccent As Long, cAccentText As Long
@@ -3319,86 +4030,53 @@ Private Sub CreateSharedChatControls(frm As Form)
     cAccentText = RGB(255, 255, 255)
 
     Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 340, 130, 2800, 360)
+    ctl.Name = "lblChatTitle"
     ctl.Caption = ChrW(&H2726) & " Access LLM Toolkit Web"
     ctl.FontName = "Microsoft YaHei": ctl.FontSize = 13: ctl.FontBold = True: ctl.ForeColor = cAccent: ctl.BackStyle = 0
 
-    Set ctl = CreateControl(frm.Name, acComboBox, acDetail, , , 3300, 130, 2000, 360)
-    ctl.Name = "cboProvider": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 10
-    ctl.RowSourceType = "Value List": ctl.RowSource = GetProviderRowSource()
-    ctl.DefaultValue = """DeepSeek Pro""": ctl.LimitToList = True: ctl.BackColor = cSurface: ctl.ForeColor = cText: ctl.BorderColor = cBorder
+    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 600, 1100, 700, 360)
+    ctl.Name = "lblChatProvider": ctl.Caption = "模型": ctl.BackStyle = 0
+    Set ctl = CreateControl(frm.Name, acComboBox, acDetail, , , 1440, 1020, 5100, 480)
+    ctl.Name = "cboProvider": ctl.RowSourceType = "Value List": ctl.RowSource = GetProviderRowSource(): ctl.LimitToList = True
+    ctl.DefaultValue = """" & Replace(GetSetting(SETTINGS_APP, SETTINGS_SECTION, "Provider", "DeepSeek Pro"), """", """""") & """"
     ctl.AfterUpdate = "=cboProvider_AfterUpdate()"
-
-    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 5400, 170, 700, 280)
-    ctl.Name = "lblReasoningEffort": ctl.Caption = "思考": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 8: ctl.ForeColor = cSubText: ctl.BackStyle = 0
-    Set ctl = CreateControl(frm.Name, acComboBox, acDetail, , , 6000, 130, 1400, 360)
-    ctl.Name = "cboReasoningEffort": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 9
-    ctl.RowSourceType = "Value List": ctl.RowSource = """默认"";""low"";""medium"";""high"";""xhigh"""
-    ctl.DefaultValue = """" & Replace(GetSavedReasoningEffort(), """", """""") & """": ctl.LimitToList = True: ctl.BackColor = cSurface: ctl.ForeColor = cText: ctl.BorderColor = cBorder
+    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 6960, 1100, 1100, 360)
+    ctl.Name = "lblReasoningEffort": ctl.Caption = "思考强度": ctl.BackStyle = 0
+    Set ctl = CreateControl(frm.Name, acComboBox, acDetail, , , 8160, 1020, 2160, 480)
+    ctl.Name = "cboReasoningEffort": ctl.RowSourceType = "Value List"
+    ctl.RowSource = """默认"";""low"";""medium"";""high"";""xhigh""": ctl.LimitToList = True
+    ctl.DefaultValue = """" & Replace(GetSavedReasoningEffort(), """", """""") & """"
     ctl.AfterUpdate = "=cboReasoningEffort_AfterUpdate()"
 
-    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 6000, 500, 2100, 180)
-    ctl.Name = "lblReasoningCostHint": ctl.Caption = "高级别可能增加成本": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 7: ctl.ForeColor = cSubText: ctl.BackStyle = 0
+    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 8200, 500, 1400, 170)
+    ctl.Name = "btnToggleReasoning": ctl.Caption = "查看思考": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 8: ctl.Visible = False
+    ctl.OnClick = "=btnToggleReasoning_Click()"
 
-    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 7700, 130, 2000, 360)
+    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 7700, 130, 1600, 360)
     ctl.Name = "btnNewChat": ctl.Caption = ChrW(&H2795) & " 新对话": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 9: ctl.BackColor = cSurface
     ctl.OnClick = "=btnNewChat_Click()"
 
-    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 9900, 130, 2200, 360)
+    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 9400, 130, 1700, 360)
     ctl.Name = "btnHistory": ctl.Caption = " 历史记录": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 9: ctl.ForeColor = cSubText: ctl.BackColor = cBg
     ctl.OnClick = "=btnHistory_Click()"
 
-    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 12200, 130, 1800, 360)
-    ctl.Name = "btnApiSettings": ctl.Caption = "API 设置": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 9: ctl.ForeColor = cSubText: ctl.BackColor = cBg
-    ctl.OnClick = "=btnApiSettings_Click()"
+    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 11200, 130, 1300, 360)
+    ctl.Name = "btnModelSettings": ctl.Caption = "模型配置": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 9: ctl.ForeColor = cSubText: ctl.BackColor = cBg
+    ctl.OnClick = "=btnModelSettings_Click()"
 
-    Set ctl = CreateControl(frm.Name, acRectangle, acDetail, , , 250, 680, 13900, 420)
-    ctl.Name = "rectCustomBg": ctl.BackColor = cSurface: ctl.BackStyle = 1: ctl.BorderColor = cBorder: ctl.BorderStyle = 1: ctl.Visible = False
-    Set ctl = CreateControl(frm.Name, acTextBox, acDetail, , , 900, 710, 3800, 340)
-    ctl.Name = "txtCustomUrl": ctl.Visible = False
-    Set ctl = CreateControl(frm.Name, acTextBox, acDetail, , , 5400, 710, 3200, 340)
-    ctl.Name = "txtCustomKey": ctl.InputMask = "Password": ctl.Visible = False
-    Set ctl = CreateControl(frm.Name, acTextBox, acDetail, , , 9500, 710, 4500, 340)
-    ctl.Name = "txtCustomModel": ctl.Visible = False
-    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 400, 720, 500, 300)
-    ctl.Name = "lblCustomUrl": ctl.Caption = "URL": ctl.Visible = False
-    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 4900, 720, 450, 300)
-    ctl.Name = "lblCustomKey": ctl.Caption = "Key": ctl.Visible = False
-    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 8850, 720, 600, 300)
-    ctl.Name = "lblCustomModel": ctl.Caption = "模型": ctl.Visible = False
-
-    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 400, 1170, 1050, 300)
-    ctl.Name = "lblSystemPrompt": ctl.Caption = "系统提示词": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 8: ctl.ForeColor = cSubText: ctl.BackStyle = 0
-    Set ctl = CreateControl(frm.Name, acComboBox, acDetail, , , 1500, 1160, 2300, 340)
-    ctl.Name = "cboPromptTemplate": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 9: ctl.RowSourceType = "Value List": ctl.RowSource = GetPromptTemplateRowSource(): ctl.DefaultValue = """通用助手""": ctl.LimitToList = True
-    ctl.AfterUpdate = "=cboPromptTemplate_AfterUpdate()"
-    Set ctl = CreateControl(frm.Name, acTextBox, acDetail, , , 4000, 1160, 10000, 340)
-    ctl.Name = "txtSystemPrompt": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 9: ctl.BackColor = cBg: ctl.BorderColor = cBorder: ctl.BorderStyle = 1
-    ctl.DefaultValue = """" & Replace(GetSavedSystemPrompt(), """", """""") & """": ctl.AfterUpdate = "=txtSystemPrompt_AfterUpdate()"
-
-    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 400, 1620, 900, 300)
-    ctl.Name = "lblDbObject": ctl.Caption = "数据对象": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 8: ctl.ForeColor = cSubText: ctl.BackStyle = 0
-    Set ctl = CreateControl(frm.Name, acComboBox, acDetail, , , 1300, 1610, 3500, 340)
-    ctl.Name = "cboDbObject": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 9: ctl.RowSourceType = "Value List": ctl.RowSource = GetDbObjectRowSource(): ctl.LimitToList = True
-    ctl.OnGotFocus = "=cboDbObject_GotFocus()"
-    Set ctl = CreateControl(frm.Name, acComboBox, acDetail, , , 4900, 1610, 2600, 340)
-    ctl.Name = "cboDataPreset": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 9: ctl.RowSourceType = "Value List": ctl.RowSource = GetDataPresetRowSource(): ctl.DefaultValue = """综合质量""": ctl.LimitToList = True
-    ctl.AfterUpdate = "=cboDataPreset_AfterUpdate()"
-    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 7600, 1610, 1800, 340)
-    ctl.Name = "btnAnalyzeData": ctl.Caption = "分析数据": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 9: ctl.ForeColor = cAccentText: ctl.BackColor = cAccent
-    ctl.OnClick = "=btnAnalyzeData_Click()"
-    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 9500, 1610, 1900, 340)
-    ctl.Name = "btnGenerateSql": ctl.Caption = "生成 SQL": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 9
-    ctl.OnClick = "=btnGenerateSql_Click()"
-    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 11600, 1610, 2400, 340)
-    ctl.Name = "btnAttachDocument": ctl.Caption = "添加文档": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 9
-    ctl.OnClick = "=btnAttachDocument_Click()"
+    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 12600, 130, 1400, 360)
+    ctl.Name = "btnDataTools": ctl.Caption = "工具": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 9: ctl.ForeColor = cSubText: ctl.BackColor = cBg
+    ctl.OnClick = "=btnDataTools_Click()"
 
     Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 500, 8500, 8300, 280)
-    ctl.Name = "lblMsg": ctl.Caption = "选择模型，输入问题后点击发送": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 8: ctl.ForeColor = cSubText: ctl.BackStyle = 0
+    ctl.Name = "lblMsg": ctl.Caption = "请输入问题": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 8: ctl.ForeColor = cSubText: ctl.BackStyle = 0
     Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 8900, 8500, 5000, 280)
     ctl.Name = "lblTokenStats": ctl.Caption = "Token 输入 0 / 输出 0 / 合计 0": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 8: ctl.ForeColor = cSubText: ctl.TextAlign = 3: ctl.BackStyle = 0
-    Set ctl = CreateControl(frm.Name, acTextBox, acDetail, , , 550, 9000, 10800, 1200)
+    Set ctl = CreateControl(frm.Name, acTextBox, acDetail, , , 550, 9000, 9200, 1200)
     ctl.Name = "txtQ": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 11: ctl.ScrollBars = 2: ctl.EnterKeyBehavior = True: ctl.BackColor = cSurface: ctl.BorderStyle = 0
+    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 9950, 9050, 1450, 1100)
+    ctl.Name = "btnCancelRequest": ctl.Caption = "取消": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 10: ctl.ForeColor = cText: ctl.BackColor = cBg
+    ctl.OnClick = "=btnCancelRequest_Click()"
     Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 11600, 9050, 2200, 1100)
     ctl.Name = "btnAsk": ctl.Caption = ChrW(&H27A4) & " 发送": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 11: ctl.FontBold = True: ctl.ForeColor = cAccentText: ctl.BackColor = cAccent
     ctl.OnClick = "=btnAsk_Click()"
@@ -3466,7 +4144,7 @@ Public Sub CreateHistoryForm()
     ctl.BackStyle = 0
 
     ' --- cboSession: 会话下拉框 ---
-    Set ctl = CreateControl(frm.Name, acComboBox, acDetail, , , 2800, 110, 5800, 360)
+    Set ctl = CreateControl(frm.Name, acComboBox, acDetail, , , 2300, 110, 5000, 360)
     ctl.Name = "cboSession"
     ctl.FontName = "Microsoft YaHei"
     ctl.FontSize = 9
@@ -3481,7 +4159,7 @@ Public Sub CreateHistoryForm()
     ctl.AfterUpdate = "=cboSession_AfterUpdate()"
 
     ' --- btnLoadSession ---
-    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 8800, 110, 2300, 360)
+    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 7500, 110, 1800, 360)
     ctl.Name = "btnLoadSession"
     ctl.Caption = ChrW(&H21BB) & " 加载对话"
     ctl.FontName = "Microsoft YaHei"
@@ -3491,7 +4169,15 @@ Public Sub CreateHistoryForm()
     ctl.OnClick = "=btnLoadSession_Click()"
 
     ' --- btnDeleteSession ---
-    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 11300, 110, 2800, 360)
+    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 9500, 110, 1800, 360)
+    ctl.Name = "btnRenameSession"
+    ctl.Caption = "重命名"
+    ctl.FontName = "Microsoft YaHei"
+    ctl.FontSize = 9
+    ctl.BackColor = cSurface
+    ctl.OnClick = "=btnRenameSession_Click()"
+
+    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 11500, 110, 2500, 360)
     ctl.Name = "btnDeleteSession"
     ctl.Caption = ChrW(&H2716) & " 删除记录"
     ctl.FontName = "Microsoft YaHei"
@@ -3500,8 +4186,27 @@ Public Sub CreateHistoryForm()
     ctl.BackColor = cSurface
     ctl.OnClick = "=btnDeleteSession_Click()"
 
+    Set ctl = CreateControl(frm.Name, acLabel, acDetail, , , 400, 700, 900, 300)
+    ctl.Caption = "搜索": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 9: ctl.ForeColor = cSubText: ctl.BackStyle = 0
+
+    Set ctl = CreateControl(frm.Name, acTextBox, acDetail, , , 1300, 650, 6000, 360)
+    ctl.Name = "txtHistorySearch": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 9
+    ctl.BackColor = cSurface: ctl.BorderColor = cBorder: ctl.SpecialEffect = 0
+
+    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 7500, 650, 1800, 360)
+    ctl.Name = "btnSearchHistory": ctl.Caption = "搜索": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 9
+    ctl.BackColor = cAccent: ctl.ForeColor = RGB(255, 255, 255): ctl.OnClick = "=btnSearchHistory_Click()"
+
+    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 9500, 650, 1800, 360)
+    ctl.Name = "btnClearHistorySearch": ctl.Caption = "清除": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 9
+    ctl.BackColor = cSurface: ctl.OnClick = "=btnClearHistorySearch_Click()"
+
+    Set ctl = CreateControl(frm.Name, acCommandButton, acDetail, , , 11500, 650, 2500, 360)
+    ctl.Name = "btnExportSession": ctl.Caption = "导出 MD / HTML": ctl.FontName = "Microsoft YaHei": ctl.FontSize = 9
+    ctl.BackColor = cSurface: ctl.OnClick = "=btnExportSession_Click()"
+
     ' --- txtHistoryDetail: 对话详情 ---
-    Set ctl = CreateControl(frm.Name, acTextBox, acDetail, , , 400, 680, 13600, 9300)
+    Set ctl = CreateControl(frm.Name, acTextBox, acDetail, , , 400, 1160, 13600, 8820)
     ctl.Name = "txtHistoryDetail"
     ctl.FontName = "Microsoft YaHei"
     ctl.FontSize = 10
