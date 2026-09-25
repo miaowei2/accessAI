@@ -2,7 +2,7 @@
 
 [中文](#-功能特性) | [English](#-features)
 
-**让 Microsoft Access 无缝对接 AI 大模型的开源 VBA 工具库**
+让 Microsoft Access 无缝对接 AI 大模型的开源 VBA 工具库
 
 Microsoft Access AI / LLM integration toolkit for VBA developers.
 
@@ -23,8 +23,7 @@ Microsoft Access AI / LLM integration toolkit for VBA developers.
 
 ![Access LLM Toolkit 界面截图](1.png)
 ![Access LLM Toolkit 界面截图](2.png)
-![Access LLM Toolkit 界面截图](3.png) 
-
+![Access LLM Toolkit 界面截图](3.png)
 
 ---
 
@@ -35,8 +34,11 @@ Microsoft Access AI / LLM integration toolkit for VBA developers.
 - **对话历史记录** — 自动保持对话上下文，AI 能记住之前的对话内容，点击「新对话」重置
 - **历史对话持久化** — 对话记录自动保存至 Access 数据表 `tblChatHistory`，关闭数据库后仍可查阅
 - **历史会话管理** — 通过 `frmChatHistory` 窗体浏览、加载、删除历史会话
+- **历史搜索与导出** — 按会话标题或消息正文搜索，支持会话重命名及 UTF-8 Markdown / HTML 导出
 - **系统提示词配置** — 在主窗体中填写 System Prompt，统一控制 AI 的角色、语气和回答规则
 - **思考强度配置** — 支持 `low` / `medium` / `high` / `xhigh` 档位，按需向兼容模型发送 `reasoning_effort` 参数；更高的思考级别可能会增加成本
+- **思考内容展示** — 当模型 API 返回 `reasoning_content` 或兼容字段时，在最终答案前独立显示提供商公开的思考内容；模型未返回时不显示
+- **模型参数配置** — 通过独立设置窗体配置温度、最大 Token 和请求超时，参数自动保存并用于后续请求
 - **Token 调用统计** — 每次请求后显示输入 Token、输出 Token 与合计 Token；优先使用 API 返回的 `usage`，无返回时自动估算
 - **数据库对象分析** — 选择当前数据库中的表或查询，自动读取字段结构、记录数和样例数据交给 AI 分析
 - **数据质量预设** — 内置完整性、重复、类型异常、日期离群值和索引性能等分析场景
@@ -47,6 +49,7 @@ Microsoft Access AI / LLM integration toolkit for VBA developers.
 - **API Key 安全存储** — 内置提供商凭据不写入 VBA 源码，使用 Windows DPAPI 加密并绑定当前 Windows 用户
 - **现代化 UI** — 参考 DeepSeek / Gemini 风格设计，白色背景 + 蓝紫色调，简洁美观
 - **流式输出 (SSE)** — 基于 curl 的流式传输，实时逐字显示 AI 回答（Windows 10 1803+）
+- **请求控制** — 流式请求可随时取消；网络错误、HTTP 429 和服务端错误自动重试两次并采用指数退避
 - **打字机效果** — 无 curl 环境自动降级为同步请求 + 打字机动画
 - **Markdown 渲染** — 将 AI 返回的 Markdown 转为 Access 富文本 HTML，支持：
   - 标题（`#` ~ `######`）
@@ -63,7 +66,7 @@ Microsoft Access AI / LLM integration toolkit for VBA developers.
 ## 📋 环境要求
 
 | 项目 | 要求 |
-|------|------|
+| --- | --- |
 | Microsoft Access | 2010 及以上（推荐 2016+） |
 | Windows | 7 及以上（流式输出需 Windows 10 1803+） |
 | VBA 引用 | Microsoft Scripting Runtime |
@@ -118,7 +121,7 @@ CreateAIWebForm
 
 ## 📁 项目结构
 
-```
+```text
 access-llm-toolkit/
 ├── AI.accdb                 # 示例 Access 数据库（含已导入的模块和窗体）
 ├── JsonConverter.bas        # JSON 解析模块 (VBA-JSON v2.3.1)
@@ -132,7 +135,7 @@ access-llm-toolkit/
 ### Module_Markdown.bas
 
 | 功能分区 | 说明 |
-|----------|------|
+| --- | --- |
 | Markdown → 富文本 HTML | `MarkdownToRichText()` 将 Markdown 转为 Access 富文本控件支持的 HTML |
 | AI API 调用 (多模型) | 支持 DeepSeek/通义千问/文心一言/Kimi/OpenAI/GLM/Gemini/豆包/腾讯混元/讯飞星火；支持 System Prompt 与思考强度 `reasoning_effort`；方案A：`StreamWithCurl` 流式 SSE；方案B：`SyncWithTypewriter` 同步+打字机 |
 | 数据库对象分析 | 读取当前 Access 数据库中的表/查询，生成字段结构、记录数和前 30 行样例数据供 AI 分析 |
@@ -159,6 +162,15 @@ ClearHistory
 ' 打开 API Key 安全设置
 ConfigureApiKeys
 
+' 打开温度、最大 Token 和超时设置
+ConfigureModelParameters
+
+' 重命名指定历史会话
+RenameChatSession "20260921_120000_1234", "季度经营分析"
+
+' 将指定历史会话导出为 Markdown 或 HTML
+ExportChatSession "20260921_120000_1234", "C:\Reports\chat.md", "MD"
+
 ' 创建 Markdown 查看器窗体
 CreateMarkdownForm
 
@@ -177,6 +189,7 @@ SetTextBoxMarkdown Me.txtResult, sMarkdown
 - [x] Kimi 模型支持
 - [x] OpenAI GPT-5.6 Sol / Treea / Luna、GPT-5.5 / 5.4、Gemini、GLM、豆包、腾讯混元、讯飞星火支持
 - [x] 思考强度 `low` / `medium` / `high` / `xhigh` 配置
+- [x] 模型 API 公开思考内容的流式与同步展示
 - [x] Token 调用与返回统计
 - [x] 多模型统一切换界面
 - [x] 对话历史记录
@@ -190,13 +203,9 @@ SetTextBoxMarkdown Me.txtResult, sMarkdown
 - [x] 数据质量分析预设与提示词模板
 - [x] AI 生成 Access SQL、安全预览和确认执行
 - [x] API Key 安全配置（从代码常量迁移到本地配置，并使用 Windows DPAPI 保护）
-- [ ] 可视化模型参数配置（温度、最大 Token、超时）
-- [ ] 请求取消、失败重试与限流退避
-- [ ] 文件与文档问答（TXT / CSV / PDF / Word / Excel）
-- [ ] 对话搜索、重命名、导出 Markdown / HTML
-- [ ] 提示词模板库与业务场景预设
-- [ ] AI 生成 Access SQL，并在用户确认后预览执行
-- [ ] Function Calling，让模型安全调用白名单中的 Access 查询或 VBA 函数
+- [x] 可视化模型参数配置（温度、最大 Token、超时）
+- [x] 流式请求取消、失败重试与限流退避
+- [x] 对话搜索、重命名、导出 Markdown / HTML
 
 ## 🐛 问题反馈
 
@@ -212,7 +221,7 @@ SetTextBoxMarkdown Me.txtResult, sMarkdown
 
 ## 👨‍💻 作者
 
-**缪炜（will miao）**
+### 缪炜（will miao）
 
 现任微软最有价值专家（MVP），自媒体博主（公众号Access开发）
 
@@ -224,7 +233,7 @@ SetTextBoxMarkdown Me.txtResult, sMarkdown
 ## 📮 联系方式
 
 - GitHub: [@miaowei2](https://github.com/miaowei2)
-- email:will.miao@edonsoft.com
+- email: [will.miao@edonsoft.com](mailto:will.miao@edonsoft.com)
 - 公众号：Access开发
 - B站：[@Access开发易登软件](https://space.bilibili.com/10580232?spm_id_from=333.1007.0.0)
 - 公司网站：[www.edonsoft.com](http://www.edonsoft.com)
@@ -235,9 +244,9 @@ SetTextBoxMarkdown Me.txtResult, sMarkdown
 
 ---
 
-# English
+## English
 
-**An open-source VBA toolkit that seamlessly connects Microsoft Access to AI large language models.**
+An open-source VBA toolkit that seamlessly connects Microsoft Access to AI large language models.
 
 > Call DeepSeek, Qwen, ERNIE Bot, Kimi, OpenAI, Gemini, GLM, Doubao, Tencent Hunyuan, iFlytek Spark and other AI models directly from Access — with streaming output, Markdown rendering, and typewriter effects, ready to use out of the box.
 
@@ -256,6 +265,7 @@ SetTextBoxMarkdown Me.txtResult, sMarkdown
 
 ![Access LLM Toolkit Interface](1.png)
 ![Access LLM Toolkit Interface](2.png)
+
 ---
 
 ## ✨ Features
@@ -265,8 +275,12 @@ SetTextBoxMarkdown Me.txtResult, sMarkdown
 - **Conversation History** — Automatically maintains conversation context so the AI remembers previous exchanges; click "New Chat" to reset
 - **Persistent History Storage** — Conversations are automatically saved to an Access table `tblChatHistory` and persist across sessions
 - **History Session Management** — Browse, load, and delete historical sessions via the `frmChatHistory` form
+- **History Search and Export** — Search session titles or message content, rename sessions, and export UTF-8 Markdown or HTML
 - **System Prompt Configuration** — Set a System Prompt in the main form to control the AI role, tone, and response rules
 - **Reasoning Effort Configuration** — Supports `low` / `medium` / `high` / `xhigh` and sends `reasoning_effort` to compatible models when selected; higher reasoning levels may increase cost
+- **Reasoning Display** — When the API returns `reasoning_content` or a compatible field, displays that provider-exposed reasoning separately before the final answer; nothing is shown when unavailable
+- **Model Parameters** — Configure temperature, maximum tokens, and request timeout in a dedicated settings form; values are persisted for subsequent requests
+- **Token Usage Statistics** — Shows prompt, completion, and total token counts after each request, using API usage data when available and estimates otherwise
 - **Database Object Analysis** — Select a table or query from the current database and send schema, row count, and sample rows to AI for analysis
 - **Data Quality Presets** — Built-in checks for completeness, duplicates, type anomalies, date outliers, indexes, and performance
 - **Document Q&A** — Read TXT, CSV, Word, Excel, and PDF content and add it to a question for AI analysis
@@ -276,6 +290,7 @@ SetTextBoxMarkdown Me.txtResult, sMarkdown
 - **Secure API Key Storage** — Built-in provider credentials stay out of VBA source and are protected with Windows DPAPI for the current Windows user
 - **Modern UI** — DeepSeek / Gemini-inspired design with clean white background and blue-purple accents
 - **Streaming Output (SSE)** — Real-time token-by-token display via curl-based SSE streaming (Windows 10 1803+)
+- **Request Control** — Cancel an active streaming request; transient network failures, HTTP 429 responses, and server errors are retried twice with exponential backoff
 - **Typewriter Effect** — Automatic fallback to synchronous request + typewriter animation when curl is unavailable
 - **Markdown Rendering** — Converts AI-returned Markdown to Access Rich Text HTML, supporting:
   - Headings (`#` through `######`)
@@ -291,7 +306,7 @@ SetTextBoxMarkdown Me.txtResult, sMarkdown
 ## 📋 Requirements
 
 | Item | Requirement |
-|------|-------------|
+| --- | --- |
 | Microsoft Access | 2010 or later (2016+ recommended) |
 | Windows | 7 or later (streaming requires Windows 10 1803+) |
 | VBA Reference | Microsoft Scripting Runtime |
@@ -346,7 +361,7 @@ CreateAIWebForm
 
 ## 📁 Project Structure
 
-```
+```text
 access-llm-toolkit/
 ├── AI.accdb                 # Sample Access database (modules & forms included)
 ├── JsonConverter.bas        # JSON parsing module (VBA-JSON v2.3.1)
@@ -357,10 +372,10 @@ access-llm-toolkit/
 
 ## 🔧 Core Module Reference
 
-### Module_Markdown.bas
+### Core VBA Module
 
 | Section | Description |
-|---------|-------------|
+| --- | --- |
 | Markdown → Rich Text HTML | `MarkdownToRichText()` converts Markdown to HTML supported by Access Rich Text controls |
 | AI API Calls (Multi-Model) | Supports DeepSeek/Qwen/ERNIE/Kimi/OpenAI/GLM/Gemini/Doubao/Tencent Hunyuan/iFlytek Spark; supports System Prompt and `reasoning_effort`; Plan A: `StreamWithCurl` for SSE streaming; Plan B: `SyncWithTypewriter` for sync + typewriter |
 | Database Object Analysis | Reads tables/queries from the current Access database and sends schema, row count, and the first 30 sample rows to AI |
@@ -387,6 +402,15 @@ ClearHistory
 ' Open secure API key settings
 ConfigureApiKeys
 
+' Open temperature, maximum token, and timeout settings
+ConfigureModelParameters
+
+' Rename a history session
+RenameChatSession "20260921_120000_1234", "Quarterly business review"
+
+' Export a history session as Markdown or HTML
+ExportChatSession "20260921_120000_1234", "C:\Reports\chat.md", "MD"
+
 ' Create Markdown viewer form
 CreateMarkdownForm
 
@@ -405,6 +429,7 @@ SetTextBoxMarkdown Me.txtResult, sMarkdown
 - [x] Kimi model support
 - [x] OpenAI GPT-5.6 Sol / Treea / Luna, GPT-5.5 / 5.4, Gemini, GLM, Doubao, Tencent Hunyuan, and iFlytek Spark support
 - [x] Reasoning effort `low` / `medium` / `high` / `xhigh` configuration
+- [x] Streaming and synchronous display of reasoning exposed by model APIs
 - [x] Unified multi-model switching UI
 - [x] Conversation history
 - [x] Persistent history storage & session management
@@ -417,13 +442,9 @@ SetTextBoxMarkdown Me.txtResult, sMarkdown
 - [x] Data quality presets and prompt templates
 - [x] AI-generated Access SQL with validation, preview, and confirmed execution
 - [x] Secure API key configuration (move secrets out of source constants and protect them with Windows DPAPI)
-- [ ] Visual model parameters (temperature, max tokens, and timeout)
-- [ ] Request cancellation, retries, and rate-limit backoff
-- [ ] File and document Q&A (TXT / CSV / PDF / Word / Excel)
-- [ ] Conversation search, rename, and Markdown / HTML export
-- [ ] Prompt template library and business workflow presets
-- [ ] Generate Access SQL with preview and explicit confirmation before execution
-- [ ] Function calling for allow-listed Access queries and VBA functions
+- [x] Visual model parameters (temperature, max tokens, and timeout)
+- [x] Streaming request cancellation, retries, and rate-limit backoff
+- [x] Conversation search, rename, and Markdown / HTML export
 
 ## 🐛 Bug Reports
 
@@ -439,7 +460,7 @@ This project is licensed under the MIT License — see the [LICENSE](LICENSE) fi
 
 ## 👨‍💻 Author
 
-**Will Miao (缪炜)**
+### Will Miao (缪炜)
 
 Microsoft Most Valuable Professional (MVP) and content creator (WeChat Official Account: Access开发).
 
@@ -452,7 +473,7 @@ Specializes in enterprise digital solutions, having independently architected or
 ## 📮 Contact
 
 - GitHub: [@miaowei2](https://github.com/miaowei2)
-- Email: will.miao@edonsoft.com
+- Email: [will.miao@edonsoft.com](mailto:will.miao@edonsoft.com)
 - WeChat Official Account: Access开发
 - Bilibili: [@Access开发易登软件](https://space.bilibili.com/10580232?spm_id_from=333.1007.0.0)
 - Website: [www.edonsoft.com](http://www.edonsoft.com)
